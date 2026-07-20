@@ -1,0 +1,240 @@
+// schema.prisma — Sistema de Gestión de Stock y Ventas
+// Base de datos: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum Rol {
+  ADMIN
+  VENDEDOR
+}
+
+enum TipoMovimientoStock {
+  VENTA
+  COMPRA
+  AJUSTE
+  DEVOLUCION
+  AJUSTE_INICIAL
+}
+
+enum EstadoVenta {
+  CONFIRMADA
+  ANULADA
+}
+
+enum EstadoCompra {
+  RECIBIDA
+  PENDIENTE
+}
+
+enum FormaPago {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA
+}
+
+// ─────────────────────────────────────────────
+// Usuarios
+// ─────────────────────────────────────────────
+
+model Usuario {
+  id           Int      @id @default(autoincrement())
+  nombre       String
+  usuario      String   @unique
+  passwordHash String   @map("password_hash")
+  rol          Rol      @default(VENDEDOR)
+  activo       Boolean  @default(true)
+  creadoEn     DateTime @default(now()) @map("creado_en")
+
+  ventas            Venta[]
+  movimientosStock  MovimientoStock[]
+  cajaAperturas     Caja[]
+
+  @@map("usuarios")
+}
+
+// ─────────────────────────────────────────────
+// Categorías y Productos
+// ─────────────────────────────────────────────
+
+model Categoria {
+  id       Int        @id @default(autoincrement())
+  nombre   String     @unique
+  productos Producto[]
+
+  @@map("categorias")
+}
+
+model Producto {
+  id            Int      @id @default(autoincrement())
+  sku           String   @unique
+  nombre        String
+  categoriaId   Int?     @map("categoria_id")
+  precioCosto   Decimal  @map("precio_costo") @db.Decimal(12, 2)
+  precioVenta   Decimal  @map("precio_venta") @db.Decimal(12, 2)
+  stockActual   Int      @default(0) @map("stock_actual")
+  stockMinimo   Int      @default(0) @map("stock_minimo")
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  categoria         Categoria?         @relation(fields: [categoriaId], references: [id])
+  movimientosStock  MovimientoStock[]
+  ventaItems        VentaItem[]
+  compraItems       CompraItem[]
+
+  @@index([nombre])
+  @@index([stockActual])
+  @@map("productos")
+}
+
+// ─────────────────────────────────────────────
+// Movimientos de stock (fuente de verdad de auditoría)
+// ─────────────────────────────────────────────
+
+model MovimientoStock {
+  id              Int                 @id @default(autoincrement())
+  productoId      Int                 @map("producto_id")
+  tipo            TipoMovimientoStock
+  cantidad        Int                 // positivo = alta, negativo = baja
+  fecha           DateTime            @default(now())
+  usuarioId       Int                 @map("usuario_id")
+  referenciaTipo  String?             @map("referencia_tipo") // "venta" | "compra" | null
+  referenciaId    Int?                @map("referencia_id")
+  motivo          String?
+
+  producto Producto @relation(fields: [productoId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@index([productoId])
+  @@index([fecha])
+  @@map("movimientos_stock")
+}
+
+// ─────────────────────────────────────────────
+// Clientes
+// ─────────────────────────────────────────────
+
+model Cliente {
+  id                   Int      @id @default(autoincrement())
+  nombre               String
+  telefono             String?
+  email                String?
+  cuentaCorrienteSaldo Decimal  @default(0) @map("cuenta_corriente_saldo") @db.Decimal(12, 2)
+  creadoEn             DateTime @default(now()) @map("creado_en")
+
+  ventas Venta[]
+
+  @@map("clientes")
+}
+
+// ─────────────────────────────────────────────
+// Ventas
+// ─────────────────────────────────────────────
+
+model Venta {
+  id          Int         @id @default(autoincrement())
+  clienteId   Int?        @map("cliente_id")
+  usuarioId   Int         @map("usuario_id")
+  fecha       DateTime    @default(now())
+  total       Decimal     @db.Decimal(12, 2)
+  descuento   Decimal     @default(0) @db.Decimal(12, 2)
+  formaPago   FormaPago   @map("forma_pago")
+  estado      EstadoVenta @default(CONFIRMADA)
+  motivoAnulacion String? @map("motivo_anulacion")
+
+  cliente Cliente?    @relation(fields: [clienteId], references: [id])
+  usuario Usuario     @relation(fields: [usuarioId], references: [id])
+  items   VentaItem[]
+
+  @@index([fecha])
+  @@index([estado])
+  @@map("ventas")
+}
+
+model VentaItem {
+  id             Int     @id @default(autoincrement())
+  ventaId        Int     @map("venta_id")
+  productoId     Int     @map("producto_id")
+  cantidad       Int
+  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  subtotal       Decimal @db.Decimal(12, 2)
+
+  venta    Venta    @relation(fields: [ventaId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+
+  @@index([ventaId])
+  @@map("venta_items")
+}
+
+// ─────────────────────────────────────────────
+// Proveedores y Compras
+// ─────────────────────────────────────────────
+
+model Proveedor {
+  id       Int      @id @default(autoincrement())
+  nombre   String
+  contacto String?
+  telefono String?
+  email    String?
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  compras Compra[]
+
+  @@map("proveedores")
+}
+
+model Compra {
+  id          Int          @id @default(autoincrement())
+  proveedorId Int          @map("proveedor_id")
+  fecha       DateTime     @default(now())
+  total       Decimal      @db.Decimal(12, 2)
+  estado      EstadoCompra @default(RECIBIDA)
+
+  proveedor Proveedor    @relation(fields: [proveedorId], references: [id])
+  items     CompraItem[]
+
+  @@map("compras")
+}
+
+model CompraItem {
+  id             Int     @id @default(autoincrement())
+  compraId       Int     @map("compra_id")
+  productoId     Int     @map("producto_id")
+  cantidad       Int
+  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+
+  compra   Compra   @relation(fields: [compraId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+
+  @@map("compra_items")
+}
+
+// ─────────────────────────────────────────────
+// Caja
+// ─────────────────────────────────────────────
+
+model Caja {
+  id                Int       @id @default(autoincrement())
+  usuarioId         Int       @map("usuario_id")
+  fechaApertura     DateTime  @default(now()) @map("fecha_apertura")
+  fechaCierre       DateTime? @map("fecha_cierre")
+  montoInicial      Decimal   @map("monto_inicial") @db.Decimal(12, 2)
+  montoFinalContado Decimal?  @map("monto_final_contado") @db.Decimal(12, 2)
+  montoFinalEsperado Decimal? @map("monto_final_esperado") @db.Decimal(12, 2)
+  diferencia        Decimal?  @db.Decimal(12, 2)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("caja")
+}
