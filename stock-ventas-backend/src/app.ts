@@ -11,6 +11,7 @@ import comprasRoutes from "./modules/compras/compras.routes";
 import clientesRoutes from "./modules/clientes/clientes.routes";
 import cajaRoutes from "./modules/caja/caja.routes";
 import reportesRoutes from "./modules/reportes/reportes.routes";
+import stockRoutes from "./modules/stock/stock.routes";
 
 export const app = express();
 
@@ -28,6 +29,7 @@ app.use("/api/v1/compras", comprasRoutes);
 app.use("/api/v1/clientes", clientesRoutes);
 app.use("/api/v1/caja", cajaRoutes);
 app.use("/api/v1/reportes", reportesRoutes);
+app.use("/api/v1/stock", stockRoutes);
 
-// El errorHandler va siempre al final, después de todas las rutas
+// ErrorHandler
 app.use(errorHandler);
