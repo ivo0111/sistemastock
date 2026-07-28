@@ -79,7 +79,7 @@ export default function Layout() {
         <div className="sidebar-footer">
           <div style={{ fontWeight: 500, color: 'white' }}>{user?.nombre}</div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--gray-400)' }}>{user?.rol}</div>
-          <button className="btn btn-sm btn-outline" style={{ color: 'white', borderColor: 'var(--gray-600)', width: '100%' }} onClick={handleLogout}>
+          <button className="btn btn-sm btn-outline" style={{ color: 'black', borderColor: 'var(--gray-600)', width: '100%' }} onClick={handleLogout}>
             Cerrar sesión
           </button>
         </div>

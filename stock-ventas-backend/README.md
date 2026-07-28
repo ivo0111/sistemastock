@@ -22,7 +22,7 @@ Node + Express + TypeScript + Prisma + PostgreSQL.
 
 4. **Migración inicial** (crea las tablas en la base de datos)
    ```bash
-   npx prisma migrate dev --name init
+   pnpm exec prisma migrate dev --name init
    ```
 
 5. **Seed** (crea el usuario admin inicial: `admin` / `admin123`)

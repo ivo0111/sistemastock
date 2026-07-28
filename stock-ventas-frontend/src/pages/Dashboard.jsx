@@ -120,7 +120,7 @@ export default function Dashboard() {
               Ajustar Stock
             </button>
             <button className="btn btn-outline" onClick={() => navigate('/caja')}>
-              {caja ? 'Cerrar Caja' : 'Abrir Caja'}
+              {caja?.abierta ? 'Cerrar Caja' : 'Abrir Caja'}
             </button>
           </div>
         </div>

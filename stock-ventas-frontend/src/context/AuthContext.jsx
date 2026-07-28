@@ -1,8 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { loginUser as apiLogin, setToken, removeToken } from '../api/client'
+import { loginUser as apiLogin, setToken, clearSession } from '../api/client'
 
 const AuthContext = createContext(null)
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('user')
@@ -29,8 +28,7 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
-    removeToken()
-    localStorage.removeItem('user')
+    clearSession()
     setUser(null)
   }
 

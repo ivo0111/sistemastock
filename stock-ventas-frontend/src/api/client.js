@@ -12,16 +12,27 @@ function removeToken() {
   localStorage.removeItem('token')
 }
 
+// Limpia toda la sesión (token + datos de usuario en caché). Usar esto,
+// no removeToken() solo, en cualquier lugar donde se cierre sesión —
+// si queda "user" en localStorage sin token, AuthContext cree que hay
+// sesión válida y se genera un loop de redirecciones /login <-> /.
+function clearSession() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+}
+
+
 async function request(endpoint, options = {}) {
   const token = getToken()
   const headers = { 'Content-Type': 'application/json', ...options.headers }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers })
-
   if (res.status === 401) {
-    removeToken()
-    window.location.href = '/login'
+    clearSession()
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
     throw new Error('Sesión expirada')
   }
 
@@ -67,4 +78,4 @@ export function loginUser(usuario, password) {
   return post('/auth/login', { usuario, password })
 }
 
-export { setToken, removeToken }
+export { setToken, removeToken, clearSession }

@@ -14,7 +14,7 @@ export default function Caja() {
     setLoading(true)
     get('/caja/actual')
       .then(setCaja)
-      .catch(() => setCaja(null))
+      .catch(() => setCaja({ abierta: false }))
       .finally(() => setLoading(false))
   }
 
@@ -25,7 +25,7 @@ export default function Caja() {
     setError('')
     setSaving(true)
     try {
-      await post('/caja/apertura', { monto_inicial: Number(montoInicial) })
+      await post('/caja/apertura', { montoInicial: Number(montoInicial) })
       setMontoInicial('')
       load()
     } catch (err) {
@@ -40,8 +40,12 @@ export default function Caja() {
     setError('')
     setSaving(true)
     try {
-      const res = await post('/caja/cierre', { monto_final_contado: Number(montoFinal) })
-      setResultado(res)
+      const res = await post('/caja/cierre', { montoFinalContado: Number(montoFinal) })
+      setResultado({
+        esperado: res.montoFinalEsperado,
+        contado: res.montoFinalContado,
+        diferencia: res.diferencia,
+      })
       setMontoFinal('')
       load()
     } catch (err) {
@@ -50,13 +54,12 @@ export default function Caja() {
       setSaving(false)
     }
   }
-
   if (loading) return <div className="loading">Cargando...</div>
 
   return (
     <div>
       <div className="grid-2">
-        {caja ? (
+        {caja?.abierta? (
           <div className="card">
             <div className="card-header">
               <span className="card-title">Caja Abierta</span>
@@ -65,7 +68,7 @@ export default function Caja() {
             <div className="grid-2">
               <div className="stat-card">
                 <div className="stat-label">Apertura</div>
-                <div className="stat-value" style={{ fontSize: 18 }}>${Number(caja.monto_inicial).toFixed(2)}</div>
+                <div className="stat-value" style={{ fontSize: 18 }}>${Number(montoInicial).toFixed(2)}</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Total Actual</div>
