@@ -1,10 +1,12 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import { EstadoVenta, FormaPago, TipoMovimientoStock, Prisma } from "@prisma/client";
+import { EstadoVenta, FormaPago, TipoComprobante, TipoMovimientoStock, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { arcaConfig } from "../../config/arca.config";
 import * as arcaService from "../arca/arca.service";
+import { TipoComprobanteArca } from "../arca/arca.types";
 import { generarHtmlComprobante } from "./comprobante.template";
+
 
 interface ItemInput {
   productoId: number;
@@ -176,7 +178,7 @@ export async function generarComprobante(id: number): Promise<string> {
   if (!venta.cae) {
     const tipoComprobante = arcaService.determinarTipoComprobante(
       venta.cliente?.condicionIva ?? null
-    ) as TipoComprobante;
+    ) as TipoComprobanteArca;
 
     const resultado = await arcaService.solicitarCAE({
       puntoVenta: arcaConfig.puntoVenta,
@@ -189,7 +191,7 @@ export async function generarComprobante(id: number): Promise<string> {
     venta = await prisma.venta.update({
       where: { id },
       data: {
-        tipoComprobante,
+        tipoComprobante: tipoComprobante as TipoComprobante,
         puntoVenta: resultado.puntoVenta,
         numeroComprobante: resultado.numeroComprobante,
         cae: resultado.cae,
