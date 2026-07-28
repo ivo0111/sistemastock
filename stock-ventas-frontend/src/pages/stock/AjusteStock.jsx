@@ -15,8 +15,7 @@ export default function AjusteStock() {
     setSuccess('')
     setSaving(true)
     try {
-      await post('/stock/ajuste', {
-        producto_id: Number(productoId),
+      await post(`/productos/${Number(productoId)}/ajuste-stock`, {
         cantidad: Number(cantidad),
         motivo: motivo.trim(),
       })

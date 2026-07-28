@@ -133,8 +133,8 @@ export default function Clientes() {
                 <tr key={c.id}>
                   <td>{c.nombre}</td>
                   <td>{c.telefono || '-'}</td>
-                  <td style={{ color: Number(c.cuenta_corriente_saldo) < 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>
-                    ${Number(c.cuenta_corriente_saldo || 0).toFixed(2)}
+                  <td style={{ color: Number(c.cuentaCorrienteSaldo) < 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>
+                    ${Number(c.cuentaCorrienteSaldo || 0).toFixed(2)}
                   </td>
                   <td>
                     <button className="btn btn-sm btn-outline" onClick={() => verHistorial(c)}>Historial</button>

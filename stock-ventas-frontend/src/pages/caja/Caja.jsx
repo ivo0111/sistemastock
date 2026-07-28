@@ -68,15 +68,15 @@ export default function Caja() {
             <div className="grid-2">
               <div className="stat-card">
                 <div className="stat-label">Apertura</div>
-                <div className="stat-value" style={{ fontSize: 18 }}>${Number(montoInicial).toFixed(2)}</div>
+                <div className="stat-value" style={{ fontSize: 18 }}>${Number(caja.caja?.montoInicial || 0).toFixed(2)}</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Total Actual</div>
-                <div className="stat-value" style={{ fontSize: 18 }}>${Number(caja.total_actual || 0).toFixed(2)}</div>
+                <div className="stat-value" style={{ fontSize: 18 }}>${Number(caja.totalEsperadoHastaAhora || 0).toFixed(2)}</div>
               </div>
             </div>
             <div className="text-sm text-gray" style={{ margin: '8px 0 16px' }}>
-              Abierta: {new Date(caja.fecha_apertura).toLocaleString('es-AR')}
+              Abierta: {new Date(caja.caja?.fechaApertura).toLocaleString('es-AR')}
             </div>
 
             <h4 style={{ marginBottom: 8 }}>Cerrar Caja</h4>

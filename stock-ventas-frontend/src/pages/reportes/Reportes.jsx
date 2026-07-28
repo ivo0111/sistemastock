@@ -42,7 +42,7 @@ export default function Reportes() {
   function renderVentas() {
     if (!Array.isArray(data)) return null
     const totalGeneral = data.reduce((s, r) => s + Number(r.total), 0)
-    const cantVentas = data.reduce((s, r) => s + Number(r.cantidad_ventas || 1), 0)
+    const cantVentas = data.reduce((s, r) => s + Number(r.cantidadVentas || 0), 0)
     return (
       <div>
         <div className="grid-2" style={{ marginBottom: 16 }}>
@@ -69,7 +69,7 @@ export default function Reportes() {
                 <tr key={i}>
                   <td>{r.periodo}</td>
                   <td>${Number(r.total).toFixed(2)}</td>
-                  <td>{r.cantidad_ventas || 1}</td>
+                  <td>{r.cantidadVentas}</td>
                 </tr>
               ))}
             </tbody>
@@ -94,9 +94,9 @@ export default function Reportes() {
           <tbody>
             {data.map((r, i) => (
               <tr key={i}>
-                <td>{r.producto_nombre || `#${r.producto_id}`}</td>
-                <td>{r.cantidad}</td>
-                <td>${Number(r.total || 0).toFixed(2)}</td>
+                <td>{r.nombre}</td>
+                <td>{r.cantidadVendida}</td>
+                <td>${Number(r.totalVendido || 0).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -106,43 +106,30 @@ export default function Reportes() {
   }
 
   function renderMargen() {
-    if (!Array.isArray(data)) return null
-    const totalGanancia = data.reduce((s, r) => s + Number(r.ganancia || 0), 0)
-    const totalVenta = data.reduce((s, r) => s + Number(r.total_venta || 0), 0)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null
     return (
       <div>
         <div className="grid-2" style={{ marginBottom: 16 }}>
           <div className="stat-card">
             <div className="stat-label">Ventas</div>
-            <div className="stat-value">${totalVenta.toLocaleString('es-AR')}</div>
+            <div className="stat-value">${Number(data.totalVentas || 0).toLocaleString('es-AR')}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Ganancia Bruta</div>
-            <div className="stat-value" style={{ color: 'var(--success)' }}>${totalGanancia.toLocaleString('es-AR')}</div>
+            <div className="stat-label">Costo</div>
+            <div className="stat-value">${Number(data.totalCosto || 0).toLocaleString('es-AR')}</div>
           </div>
         </div>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Período</th>
-                <th>Ventas</th>
-                <th>Ganancia</th>
-                <th>Margen %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.periodo}</td>
-                  <td>${Number(r.total_venta || 0).toFixed(2)}</td>
-                  <td style={{ color: 'var(--success)', fontWeight: 600 }}>${Number(r.ganancia || 0).toFixed(2)}</td>
-                  <td>{r.margen ? `${Number(r.margen).toFixed(1)}%` : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid-2" style={{ marginBottom: 16 }}>
+          <div className="stat-card">
+            <div className="stat-label">Ganancia Bruta</div>
+            <div className="stat-value" style={{ color: 'var(--success)' }}>${Number(data.gananciaBruta || 0).toLocaleString('es-AR')}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Margen %</div>
+            <div className="stat-value">{data.margenPorcentaje ? `${Number(data.margenPorcentaje).toFixed(1)}%` : '-'}</div>
+          </div>
         </div>
+        {data.nota && <div className="text-sm text-gray" style={{ marginTop: 8 }}>{data.nota}</div>}
       </div>
     )
   }

@@ -6,6 +6,7 @@ interface ClienteInput {
   nombre: string;
   telefono?: string;
   email?: string;
+  cuenta_corriente_saldo?: number;
 }
 
 export async function listarClientes(busqueda?: string) {
@@ -23,8 +24,34 @@ export async function obtenerCliente(id: number) {
   return cliente;
 }
 
-export async function crearCliente(input: ClienteInput) {
-  return prisma.cliente.create({ data: { ...input, cuentaCorrienteSaldo: 0 } });
+export async function crearCliente(input: ClienteInput, usuarioId?: number) {
+  const { cuenta_corriente_saldo, ...datosCliente } = input;
+  const saldoInicial = cuenta_corriente_saldo ?? 0;
+
+  if (saldoInicial === 0) {
+    return prisma.cliente.create({ data: { ...datosCliente, cuentaCorrienteSaldo: 0 } });
+  }
+
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const cliente = await tx.cliente.create({
+      data: { ...datosCliente, cuentaCorrienteSaldo: 0 },
+    });
+
+    await tx.movimientoCuentaCorriente.create({
+      data: {
+        clienteId: cliente.id,
+        tipo: "AJUSTE",
+        monto: saldoInicial,
+        usuarioId: usuarioId!,
+        motivo: "Saldo de apertura",
+      },
+    });
+
+    return tx.cliente.update({
+      where: { id: cliente.id },
+      data: { cuentaCorrienteSaldo: saldoInicial },
+    });
+  });
 }
 
 export async function actualizarCliente(id: number, input: Partial<ClienteInput>) {

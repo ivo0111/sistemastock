@@ -46,13 +46,14 @@ const clienteSchema = z.object({
   nombre: z.string().min(1),
   telefono: z.string().optional(),
   email: z.string().email().optional(),
+  cuenta_corriente_saldo: z.number().optional(),
 });
 
 router.post(
   "/",
   asyncHandler(async (req, res) => {
     const input = clienteSchema.parse(req.body);
-    const cliente = await service.crearCliente(input);
+    const cliente = await service.crearCliente(input, req.auth!.id);
     res.status(201).json(cliente);
   })
 );
