@@ -74,6 +74,30 @@ export function del(endpoint) {
   return request(endpoint, { method: 'DELETE' })
 }
 
+export async function getHtml(endpoint) {
+  const token = getToken()
+  const headers = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE_URL}${endpoint}`, { headers })
+  if (res.status === 401) {
+    clearSession()
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+    throw new Error('Sesión expirada')
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const msg = body?.error?.message || `Error ${res.status}`
+    const err = new Error(msg)
+    err.code = body?.error?.code
+    err.status = res.status
+    throw err
+  }
+  return res.text()
+}
+
 export function loginUser(usuario, password) {
   return post('/auth/login', { usuario, password })
 }

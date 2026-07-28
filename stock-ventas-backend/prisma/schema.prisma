@@ -49,6 +49,20 @@ enum FormaPago {
   TRANSFERENCIA
 }
 
+// Usados para el comprobante fiscal (integración ARCA / ex-AFIP)
+enum CondicionIva {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  CONSUMIDOR_FINAL
+  EXENTO
+}
+
+enum TipoComprobante {
+  FACTURA_A
+  FACTURA_B
+  FACTURA_C
+}
+
 // ─────────────────────────────────────────────
 // Usuarios
 // ─────────────────────────────────────────────
@@ -61,7 +75,7 @@ model Usuario {
   rol          Rol      @default(VENDEDOR)
   activo       Boolean  @default(true)
   creadoEn     DateTime @default(now()) @map("creado_en")
-
+  
   ventas            Venta[]
   movimientosStock  MovimientoStock[]
   cajaAperturas     Caja[]
@@ -138,6 +152,8 @@ model Cliente {
   email                String?
   cuentaCorrienteSaldo Decimal  @default(0) @map("cuenta_corriente_saldo") @db.Decimal(12, 2)
   creadoEn             DateTime @default(now()) @map("creado_en")
+  cuit         String?       @map("cuit")
+  condicionIva CondicionIva? @map("condicion_iva")
 
   ventas Venta[]
   movimientosCuentaCorriente MovimientoCuentaCorriente[]
@@ -177,6 +193,13 @@ model Venta {
   formaPago   FormaPago   @map("forma_pago")
   estado      EstadoVenta @default(CONFIRMADA)
   motivoAnulacion String? @map("motivo_anulacion")
+  // Datos del comprobante fiscal ARCA (ex-AFIP). Null hasta que se pide el CAE
+  // (se pide una sola vez, la primera vez que se abre el comprobante).
+  tipoComprobante   TipoComprobante? @map("tipo_comprobante")
+  puntoVenta        Int?             @map("punto_venta")
+  numeroComprobante Int?             @map("numero_comprobante")
+  cae               String?          @map("cae")
+  caeVencimiento    DateTime?        @map("cae_vencimiento")
 
   cliente Cliente?    @relation(fields: [clienteId], references: [id])
   usuario Usuario     @relation(fields: [usuarioId], references: [id])

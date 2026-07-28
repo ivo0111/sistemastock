@@ -70,7 +70,7 @@ router.get(
 
 const anularSchema = z.object({ motivo: z.string().min(1) });
 
-// Solo ADMIN puede anular ventas (con un solo vendedor, decisión conservadora)
+// Solo ADMIN puede anular ventas
 router.post(
   "/:id/anular",
   requireRole("ADMIN"),
@@ -78,6 +78,16 @@ router.post(
     const { motivo } = anularSchema.parse(req.body);
     const venta = await service.anularVenta(Number(req.params.id), motivo, req.auth!.id);
     res.json(venta);
+  })
+);
+
+// Genera (o reutiliza, si ya tiene CAE) el comprobante imprimible de la venta.
+// Sin restricción de rol: ver el detalle de una venta tampoco la tiene.
+router.get(
+  "/:id/comprobante",
+  asyncHandler(async (req, res) => {
+    const html = await service.generarComprobante(Number(req.params.id));
+    res.type("html").send(html);
   })
 );
 

@@ -2,6 +2,9 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { EstadoVenta, FormaPago, TipoMovimientoStock, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { arcaConfig } from "../../config/arca.config";
+import * as arcaService from "../arca/arca.service";
+import { generarHtmlComprobante } from "./comprobante.template";
 
 interface ItemInput {
   productoId: number;
@@ -146,6 +149,57 @@ export async function obtenerVenta(id: number) {
   });
   if (!venta) throw new AppError("VENTA_NO_ENCONTRADA", "La venta no existe", 404);
   return venta;
+}
+
+// Agregar después de obtenerVenta():
+const includeComprobante = {
+  items: { include: { producto: true } },
+  cliente: true,
+  usuario: true,
+} satisfies Prisma.VentaInclude;
+
+export async function generarComprobante(id: number): Promise<string> {
+  let venta = await prisma.venta.findUnique({ where: { id }, include: includeComprobante });
+  if (!venta) throw new AppError("VENTA_NO_ENCONTRADA", "La venta no existe", 404);
+
+  if (venta.estado === EstadoVenta.ANULADA) {
+    throw new AppError(
+      "VENTA_ANULADA",
+      "No se puede generar el comprobante de una venta anulada",
+      409
+    );
+  }
+
+  // Si todavía no se pidió el CAE para esta venta, se pide una única vez y se
+  // persiste: no tiene sentido (ni ARCA lo permite) pedir dos CAE distintos
+  // para el mismo comprobante.
+  if (!venta.cae) {
+    const tipoComprobante = arcaService.determinarTipoComprobante(
+      venta.cliente?.condicionIva ?? null
+    ) as TipoComprobante;
+
+    const resultado = await arcaService.solicitarCAE({
+      puntoVenta: arcaConfig.puntoVenta,
+      tipoComprobante,
+      importeTotal: Number(venta.total),
+      fecha: venta.fecha,
+      cuitReceptor: venta.cliente?.cuit ?? undefined,
+    });
+
+    venta = await prisma.venta.update({
+      where: { id },
+      data: {
+        tipoComprobante,
+        puntoVenta: resultado.puntoVenta,
+        numeroComprobante: resultado.numeroComprobante,
+        cae: resultado.cae,
+        caeVencimiento: resultado.caeVencimiento,
+      },
+      include: includeComprobante,
+    });
+  }
+
+  return generarHtmlComprobante(venta);
 }
 
 export async function anularVenta(id: number, motivo: string, usuarioId: number) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { get, post } from '../../api/client'
+import { get, post, getHtml } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 export default function VentaDetalle() {
@@ -47,7 +47,16 @@ export default function VentaDetalle() {
           <span className="card-title">Venta #{venta.id}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-outline" onClick={() => navigate('/ventas')}>Volver</button>
-            <button className="btn btn-outline" onClick={() => window.open(`/api/v1/ventas/${venta.id}/comprobante`, '_blank')}>
+            <button className="btn btn-outline" onClick={async () => {
+              try {
+                const html = await getHtml(`/ventas/${venta.id}/comprobante`)
+                const win = window.open('', '_blank')
+                win.document.write(html)
+                win.document.close()
+              } catch (err) {
+                setError(err.message)
+              }
+            }}>
               Comprobante
             </button>
           </div>
