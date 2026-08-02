@@ -52,6 +52,7 @@ router.get(
 
 const crearSchema = z.object({
   sku: z.string().min(1),
+  codigoBarras: z.string().optional(),
   nombre: z.string().min(1),
   categoriaId: z.number().optional(),
   precioCosto: z.number().nonnegative(),
@@ -73,6 +74,7 @@ router.post(
 
 const actualizarSchema = z.object({
   nombre: z.string().min(1).optional(),
+  codigoBarras: z.string().optional(),
   categoriaId: z.number().optional(),
   precioCosto: z.number().nonnegative().optional(),
   precioVenta: z.number().nonnegative().optional(),

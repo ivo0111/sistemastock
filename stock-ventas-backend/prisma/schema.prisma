@@ -98,6 +98,7 @@ model Categoria {
 model Producto {
   id            Int      @id @default(autoincrement())
   sku           String   @unique
+  codigoBarras  String?  @unique @map("codigo_barras")
   nombre        String
   categoriaId   Int?     @map("categoria_id")
   precioCosto   Decimal  @map("precio_costo") @db.Decimal(12, 2)

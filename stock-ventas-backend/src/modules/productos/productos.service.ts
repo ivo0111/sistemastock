@@ -18,6 +18,7 @@ export async function listarProductos(params: ListarParams) {
     where.OR = [
       { nombre: { contains: busqueda, mode: "insensitive" } },
       { sku: { contains: busqueda, mode: "insensitive" } },
+      { codigoBarras: { contains: busqueda, mode: "insensitive" } },
     ];
   }
   if (categoriaId) where.categoriaId = categoriaId;
@@ -47,9 +48,10 @@ export async function buscarProductosRapido(query: string) {
       OR: [
         { nombre: { contains: query, mode: "insensitive" } },
         { sku: { contains: query, mode: "insensitive" } },
+        { codigoBarras: { contains: query, mode: "insensitive" } },
       ],
     },
-    select: { id: true, sku: true, nombre: true, precioVenta: true, stockActual: true },
+    select: { id: true, sku: true, codigoBarras: true, nombre: true, precioVenta: true, stockActual: true },
     take: 10,
   });
 }
@@ -62,6 +64,7 @@ export async function obtenerProducto(id: number) {
 
 interface CrearProductoInput {
   sku: string;
+  codigoBarras?: string;
   nombre: string;
   categoriaId?: number;
   precioCosto: number;
@@ -75,11 +78,17 @@ export async function crearProducto(input: CrearProductoInput) {
   const existe = await prisma.producto.findUnique({ where: { sku: input.sku } });
   if (existe) throw new AppError("SKU_DUPLICADO", "Ya existe un producto con ese SKU", 409);
 
+  if (input.codigoBarras) {
+    const existeCB = await prisma.producto.findUnique({ where: { codigoBarras: input.codigoBarras } });
+    if (existeCB) throw new AppError("CODIGO_BARRAS_DUPLICADO", "Ya existe un producto con ese código de barras", 409);
+  }
+
   // Creación de producto + movimiento de stock inicial en una sola transacción
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const producto = await tx.producto.create({
       data: {
         sku: input.sku,
+        codigoBarras: input.codigoBarras || null,
         nombre: input.nombre,
         categoriaId: input.categoriaId,
         precioCosto: input.precioCosto,
@@ -106,6 +115,7 @@ export async function crearProducto(input: CrearProductoInput) {
 
 interface ActualizarProductoInput {
   nombre?: string;
+  codigoBarras?: string;
   categoriaId?: number;
   precioCosto?: number;
   precioVenta?: number;
@@ -114,7 +124,15 @@ interface ActualizarProductoInput {
 
 export async function actualizarProducto(id: number, input: ActualizarProductoInput) {
   await obtenerProducto(id); // valida que exista
-  return prisma.producto.update({ where: { id }, data: input });
+
+  if (input.codigoBarras) {
+    const existeCB = await prisma.producto.findFirst({
+      where: { codigoBarras: input.codigoBarras, id: { not: id } },
+    });
+    if (existeCB) throw new AppError("CODIGO_BARRAS_DUPLICADO", "Ya existe otro producto con ese código de barras", 409);
+  }
+
+  return prisma.producto.update({ where: { id }, data: { ...input, codigoBarras: input.codigoBarras ?? undefined } });
 }
 
 export async function eliminarProducto(id: number) {

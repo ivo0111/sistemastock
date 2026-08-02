@@ -12,6 +12,7 @@ export default function ProductoForm() {
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     sku: '',
+    codigoBarras: '',
     nombre: '',
     categoriaId: '',
     precioCosto: '',
@@ -27,6 +28,7 @@ export default function ProductoForm() {
         .then(p => {
           setForm({
             sku: p.sku || '',
+            codigoBarras: p.codigoBarras ?? p.codigo_barras ?? '',
             nombre: p.nombre || '',
             categoriaId: p.categoriaId ?? p.categoria_id ?? '',
             precioCosto: p.precioCosto ?? p.precio_costo ?? '',
@@ -56,6 +58,7 @@ export default function ProductoForm() {
         precioVenta: Number(form.precioVenta),
         stockMinimo: Number(form.stockMinimo),
       }
+      if (form.codigoBarras) body.codigoBarras = form.codigoBarras
       if (!isEdit) body.stockInicial = Number(form.stockInicial)
       if (isEdit) {
         await put(`/productos/${id}`, body)
@@ -93,6 +96,10 @@ export default function ProductoForm() {
               ))}
             </select>
           </div>
+        </div>
+        <div className="form-group">
+          <label>Código de Barras (opcional)</label>
+          <input className="form-control" name="codigoBarras" value={form.codigoBarras} onChange={handleChange} />
         </div>
         <div className="form-group">
           <label>Nombre</label>

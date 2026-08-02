@@ -114,9 +114,19 @@ export default function POS() {
         <div className="pos-search">
           <input
             ref={searchRef}
-            placeholder="Buscar producto por nombre o SKU..."
+            placeholder="Buscar producto por nombre, SKU o código de barras..."
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && busqueda) {
+                const exactMatch = productos.filter(p => p.codigoBarras === busqueda)
+                if (exactMatch.length === 1) {
+                  e.preventDefault()
+                  addToCart(exactMatch[0])
+                  setBusqueda('')
+                }
+              }
+            }}
             autoFocus
           />
         </div>
