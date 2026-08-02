@@ -6,6 +6,8 @@ import * as service from "./clientes.service";
 
 const router = Router();
 
+const idParamSchema = z.coerce.number().int().positive();
+
 router.use(requireAuth);
 
 router.get(
@@ -20,7 +22,8 @@ router.get(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const cliente = await service.obtenerCliente(Number(req.params.id));
+    const id = idParamSchema.parse(req.params.id);
+    const cliente = await service.obtenerCliente(id);
     res.json(cliente);
   })
 );
@@ -28,7 +31,8 @@ router.get(
 router.get(
   "/:id/historial",
   asyncHandler(async (req, res) => {
-    const historial = await service.obtenerHistorial(Number(req.params.id));
+    const id = idParamSchema.parse(req.params.id);
+    const historial = await service.obtenerHistorial(id);
     res.json(historial);
   })
 );
@@ -37,7 +41,8 @@ router.get(
   "/:id/cuenta-corriente/movimientos",
   requireRole("ADMIN"),
   asyncHandler(async (req, res) => {
-    const movimientos = await service.obtenerMovimientosCuentaCorriente(Number(req.params.id));
+    const id = idParamSchema.parse(req.params.id);
+    const movimientos = await service.obtenerMovimientosCuentaCorriente(id);
     res.json(movimientos);
   })
 );
@@ -46,7 +51,11 @@ const clienteSchema = z.object({
   nombre: z.string().min(1),
   telefono: z.string().optional(),
   email: z.string().email().optional(),
-  cuenta_corriente_saldo: z.number().optional(),
+  cuit: z.string().optional(),
+  condicionIva: z
+    .enum(["RESPONSABLE_INSCRIPTO", "MONOTRIBUTO", "CONSUMIDOR_FINAL", "EXENTO"])
+    .nullable()
+    .optional(),
 });
 
 router.post(
@@ -61,8 +70,9 @@ router.post(
 router.put(
   "/:id",
   asyncHandler(async (req, res) => {
+    const id = idParamSchema.parse(req.params.id);
     const input = clienteSchema.partial().parse(req.body);
-    const cliente = await service.actualizarCliente(Number(req.params.id), input);
+    const cliente = await service.actualizarCliente(id, input);
     res.json(cliente);
   })
 );
@@ -71,7 +81,8 @@ router.delete(
   "/:id",
   requireRole("ADMIN"),
   asyncHandler(async (req, res) => {
-    await service.eliminarCliente(Number(req.params.id));
+    const id = idParamSchema.parse(req.params.id);
+    await service.eliminarCliente(id);
     res.status(204).send();
   })
 );
@@ -87,9 +98,10 @@ router.post(
   "/:id/cuenta-corriente/ajuste",
   requireRole("ADMIN"),
   asyncHandler(async (req, res) => {
+    const id = idParamSchema.parse(req.params.id);
     const { monto, motivo, tipo } = ajusteSchema.parse(req.body);
     const cliente = await service.ajustarCuentaCorriente(
-      Number(req.params.id),
+      id,
       monto,
       motivo,
       req.auth!.id,

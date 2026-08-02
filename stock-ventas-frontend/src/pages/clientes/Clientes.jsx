@@ -2,15 +2,24 @@ import { useState, useEffect } from 'react'
 import { get, post, put, del } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
-const INITIAL = { nombre: '', telefono: '', email: '' }
+const CONDICIONES_IVA = [
+  { value: '', label: '(Sin especificar)' },
+  { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
+  { value: 'MONOTRIBUTO', label: 'Monotributo' },
+  { value: 'CONSUMIDOR_FINAL', label: 'Consumidor Final' },
+  { value: 'EXENTO', label: 'Exento' },
+]
+
+const INITIAL = { nombre: '', telefono: '', email: '', cuit: '', condicionIva: '' }
 const INITIAL_AJUSTE = { monto: '', motivo: '', tipo: 'CARGO' }
 
 export default function Clientes() {
   const { user } = useAuth()
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
+  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño' || user?.rol === 'dueno'
 
   const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   const [form, setForm] = useState(INITIAL)
   const [editId, setEditId] = useState(null)
@@ -19,7 +28,7 @@ export default function Clientes() {
 
   const [historial, setHistorial] = useState(null)
 
-  const [cuentaCorriente, setCuentaCorriente] = useState(null) // { cliente, movimientos }
+  const [cuentaCorriente, setCuentaCorriente] = useState(null) // { cliente, movimientos, error }
   const [cuentaLoading, setCuentaLoading] = useState(false)
 
   const [ajuste, setAjuste] = useState(null) // cliente sobre el que se está ajustando
@@ -29,8 +38,10 @@ export default function Clientes() {
 
   function load() {
     setLoading(true)
+    setLoadError('')
     get('/clientes')
       .then(r => setClientes(r.data || r || []))
+      .catch(err => setLoadError(err.message || 'Error al cargar clientes'))
       .finally(() => setLoading(false))
   }
 
@@ -48,7 +59,13 @@ export default function Clientes() {
   }
 
   function openEdit(cliente) {
-    setForm({ nombre: cliente.nombre, telefono: cliente.telefono || '', email: cliente.email || '' })
+    setForm({
+      nombre: cliente.nombre,
+      telefono: cliente.telefono || '',
+      email: cliente.email || '',
+      cuit: cliente.cuit || '',
+      condicionIva: cliente.condicionIva || '',
+    })
     setEditId(cliente.id)
     setError('')
     setShowForm(true)
@@ -57,11 +74,15 @@ export default function Clientes() {
   async function handleSave(e) {
     e.preventDefault()
     setError('')
+    // condicionIva es un enum opcional: si quedó vacío no lo mandamos,
+    // para no romper la validación Zod del backend (que espera uno de
+    // los valores del enum o directamente ausencia del campo).
+    const payload = { ...form, condicionIva: form.condicionIva || null }
     try {
       if (editId) {
-        await put(`/clientes/${editId}`, form)
+        await put(`/clientes/${editId}`, payload)
       } else {
-        await post('/clientes', form)
+        await post('/clientes', payload)
       }
       setShowForm(false)
       load()
@@ -76,13 +97,7 @@ export default function Clientes() {
       await del(`/clientes/${cliente.id}`)
       load()
     } catch (err) {
-      // El backend devuelve 409 con código CLIENTE_EN_USO o CUENTA_CORRIENTE_PENDIENTE
-      // cuando el cliente tiene ventas asociadas o saldo pendiente en cuenta corriente.
-      if (err.status === 409) {
-        alert(err.message)
-      } else {
-        alert(err.message)
-      }
+      alert(err.message)
     }
   }
 
@@ -97,13 +112,12 @@ export default function Clientes() {
 
   async function verCuentaCorriente(cliente) {
     setCuentaLoading(true)
-    setCuentaCorriente({ cliente, movimientos: [] })
+    setCuentaCorriente({ cliente, movimientos: [], error: null })
     try {
       const res = await get(`/clientes/${cliente.id}/cuenta-corriente/movimientos`)
-      setCuentaCorriente({ cliente, movimientos: res.data || res || [] })
+      setCuentaCorriente({ cliente, movimientos: res.data || res || [], error: null })
     } catch (err) {
-      alert(err.message)
-      setCuentaCorriente(null)
+      setCuentaCorriente(prev => prev ? { ...prev, error: err.message } : null)
     } finally {
       setCuentaLoading(false)
     }
@@ -137,7 +151,14 @@ export default function Clientes() {
       load()
       // Si el modal de movimientos de este cliente está abierto, lo refrescamos
       if (cuentaCorriente?.cliente.id === ajuste.id) {
-        verCuentaCorriente(ajuste)
+        const clienteRes = await get(`/clientes/${ajuste.id}`)
+        const fresco = clienteRes.data || clienteRes
+        const movRes = await get(`/clientes/${ajuste.id}/cuenta-corriente/movimientos`)
+        setCuentaCorriente({
+          cliente: fresco,
+          movimientos: movRes.data || movRes || [],
+          error: null,
+        })
       }
     } catch (err) {
       setAjusteError(err.message)
@@ -171,6 +192,20 @@ export default function Clientes() {
                 <div className="form-group">
                   <label>Email</label>
                   <input className="form-control" name="email" type="email" value={form.email} onChange={handleChange} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>CUIT</label>
+                  <input className="form-control" name="cuit" placeholder="Ej: 20304050607" value={form.cuit} onChange={handleChange} />
+                </div>
+                <div className="form-group">
+                  <label>Condición frente al IVA</label>
+                  <select className="form-control" name="condicionIva" value={form.condicionIva} onChange={handleChange}>
+                    {CONDICIONES_IVA.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="modal-actions">
@@ -232,6 +267,8 @@ export default function Clientes() {
 
             {cuentaLoading ? (
               <div className="loading">Cargando...</div>
+            ) : cuentaCorriente.error ? (
+              <div className="alert alert-error">{cuentaCorriente.error}</div>
             ) : cuentaCorriente.movimientos.length === 0 ? (
               <p className="text-sm text-gray">Sin movimientos registrados</p>
             ) : (
@@ -331,7 +368,9 @@ export default function Clientes() {
       )}
 
       {loading ? <div className="loading">Cargando...</div> : (
-        <div className="table-container">
+        <>
+          {loadError && <div className="alert alert-error">{loadError}</div>}
+          <div className="table-container">
           <table>
             <thead>
               <tr>
@@ -367,6 +406,7 @@ export default function Clientes() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )

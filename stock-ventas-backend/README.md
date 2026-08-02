@@ -27,7 +27,7 @@ Node + Express + TypeScript + Prisma + PostgreSQL.
 
 5. **Seed** (crea el usuario admin inicial: `admin` / `admin123`)
    ```bash
-   npm run seed
+   pnpm run seed
    ```
 
 6. **Levantar el servidor en desarrollo**

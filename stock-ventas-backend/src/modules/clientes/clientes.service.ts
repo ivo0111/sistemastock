@@ -1,12 +1,14 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import { TipoMovimientoCuentaCorriente, Prisma } from "@prisma/client";
+import { TipoMovimientoCuentaCorriente, CondicionIva, Prisma } from "@prisma/client";
 
 interface ClienteInput {
   nombre: string;
   telefono?: string;
   email?: string;
   cuenta_corriente_saldo?: number;
+  cuit?: string;
+  condicionIva?: CondicionIva | null;
 }
 
 export async function listarClientes(busqueda?: string) {
@@ -32,6 +34,10 @@ export async function crearCliente(input: ClienteInput, usuarioId?: number) {
     return prisma.cliente.create({ data: { ...datosCliente, cuentaCorrienteSaldo: 0 } });
   }
 
+  if (!usuarioId) {
+    throw new AppError("USUARIO_REQUERIDO", "Se requiere usuarioId para crear cliente con saldo inicial", 400);
+  }
+
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cliente = await tx.cliente.create({
       data: { ...datosCliente, cuentaCorrienteSaldo: 0 },
@@ -42,7 +48,7 @@ export async function crearCliente(input: ClienteInput, usuarioId?: number) {
         clienteId: cliente.id,
         tipo: "AJUSTE",
         monto: saldoInicial,
-        usuarioId: usuarioId!,
+        usuarioId,
         motivo: "Saldo de apertura",
       },
     });
@@ -60,26 +66,38 @@ export async function actualizarCliente(id: number, input: Partial<ClienteInput>
 }
 
 export async function eliminarCliente(id: number) {
-  const cliente = await obtenerCliente(id);
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const cliente = await tx.cliente.findUnique({ where: { id } });
+    if (!cliente) throw new AppError("CLIENTE_NO_ENCONTRADO", "El cliente no existe", 404);
 
-  if (!cliente.cuentaCorrienteSaldo.equals(0)) {
-    throw new AppError(
-      "CUENTA_CORRIENTE_PENDIENTE",
-      "No se puede borrar: el cliente tiene saldo pendiente en cuenta corriente",
-      409
-    );
-  }
+    if (!cliente.cuentaCorrienteSaldo.equals(0)) {
+      throw new AppError(
+        "CUENTA_CORRIENTE_PENDIENTE",
+        "No se puede borrar: el cliente tiene saldo pendiente en cuenta corriente",
+        409
+      );
+    }
 
-  const ventasAsociadas = await prisma.venta.count({ where: { clienteId: id } });
-  if (ventasAsociadas > 0) {
-    throw new AppError(
-      "CLIENTE_EN_USO",
-      `No se puede borrar: tiene ${ventasAsociadas} venta(s) asociada(s)`,
-      409
-    );
-  }
+    const ventasAsociadas = await tx.venta.count({ where: { clienteId: id } });
+    if (ventasAsociadas > 0) {
+      throw new AppError(
+        "CLIENTE_EN_USO",
+        `No se puede borrar: tiene ${ventasAsociadas} venta(s) asociada(s)`,
+        409
+      );
+    }
 
-  return prisma.cliente.delete({ where: { id } });
+    const movimientos = await tx.movimientoCuentaCorriente.count({ where: { clienteId: id } });
+    if (movimientos > 0) {
+      throw new AppError(
+        "CLIENTE_CON_MOVIMIENTOS",
+        `No se puede borrar: tiene ${movimientos} movimiento(s) en cuenta corriente`,
+        409
+      );
+    }
+
+    return tx.cliente.delete({ where: { id } });
+  });
 }
 
 export async function obtenerHistorial(id: number) {

@@ -2,6 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import { get, post } from '../../api/client'
 import { useNavigate } from 'react-router-dom'
 
+function useDebounce(value, delay) {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(id)
+  }, [value, delay])
+  return debounced
+}
+
 export default function POS() {
   const navigate = useNavigate()
   const [productos, setProductos] = useState([])
@@ -9,16 +18,39 @@ export default function POS() {
   const [cart, setCart] = useState([])
   const [formaPago, setFormaPago] = useState('efectivo')
   const [clienteId, setClienteId] = useState('')
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null)
+  const [clientesBusqueda, setClientesBusqueda] = useState('')
+  const [clientes, setClientes] = useState([])
+  const [clientesAbierto, setClientesAbierto] = useState(false)
   const [descuento, setDescuento] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const searchRef = useRef(null)
+  const clienteWrapperRef = useRef(null)
+  const debouncedClientesBusqueda = useDebounce(clientesBusqueda, 300)
 
   useEffect(() => {
     get('/productos/buscar', { q: busqueda || '__all__' })
       .then(r => setProductos(r.data || r || []))
       .catch(() => {})
   }, [busqueda])
+
+  useEffect(() => {
+    if (!debouncedClientesBusqueda || !clientesAbierto) { setClientes([]); return }
+    get('/clientes', { busqueda: debouncedClientesBusqueda })
+      .then(r => setClientes(r.data || r || []))
+      .catch(() => setClientes([]))
+  }, [debouncedClientesBusqueda, clientesAbierto])
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (clienteWrapperRef.current && !clienteWrapperRef.current.contains(e.target)) {
+        setClientesAbierto(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   function addToCart(p) {
     if (p.stockActual <= 0) return
@@ -128,9 +160,53 @@ export default function POS() {
           </select>
         </div>
 
-        <div className="form-group">
-          <label>Cliente ID (opcional)</label>
-          <input className="form-control" type="number" value={clienteId} onChange={e => setClienteId(e.target.value)} />
+        <div className="form-group" style={{ position: 'relative' }} ref={clienteWrapperRef}>
+          <label>Cliente (opcional)</label>
+          {clienteSeleccionado ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid var(--gray-300)', borderRadius: 6 }}>
+              <span style={{ flex: 1 }}>{clienteSeleccionado.nombre}</span>
+              <button
+                type="button"
+                onClick={() => { setClienteId(''); setClienteSeleccionado(null); setClientesBusqueda('') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 18, lineHeight: 1 }}
+              >×</button>
+            </div>
+          ) : (
+            <>
+              <input
+                className="form-control"
+                placeholder="Buscar cliente por nombre..."
+                value={clientesBusqueda}
+                onChange={e => { setClientesBusqueda(e.target.value); setClientesAbierto(true); setClienteId('') }}
+                onFocus={() => { if (clientesBusqueda) setClientesAbierto(true) }}
+              />
+              {clientesAbierto && clientes.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                  background: '#fff', border: '1px solid var(--gray-300)', borderRadius: 6,
+                  listStyle: 'none', margin: 0, padding: 0, maxHeight: 200, overflowY: 'auto',
+                  boxShadow: '0 4px 12px rgba(0,0,0,.1)',
+                }}>
+                  {clientes.map(c => (
+                    <li
+                      key={c.id}
+                      onClick={() => { setClienteId(c.id); setClienteSeleccionado(c); setClientesBusqueda(''); setClientesAbierto(false) }}
+                      style={{
+                        padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                        borderBottom: '1px solid var(--gray-100)',
+                        display: 'flex', justifyContent: 'space-between', gap: 8,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-100)'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                    >
+                      <span>{c.nombre}</span>
+                      {c.cuit && <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>CUIT: {c.cuit}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </div>
 
         <div className="form-group">
