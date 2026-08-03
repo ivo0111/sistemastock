@@ -19,6 +19,29 @@ router.get(
 );
 
 router.get(
+  "/etiquetas",
+  asyncHandler(async (req, res) => {
+    const { ids } = z
+      .object({
+        ids: z
+          .string()
+          .min(1)
+          .transform((val) =>
+            val
+              .split(",")
+              .map((v) => Number(v.trim()))
+              .filter((n) => Number.isInteger(n) && n > 0)
+          )
+          .refine((arr) => arr.length > 0, "Debe indicar al menos un id válido"),
+      })
+      .parse(req.query);
+
+    const data = await service.obtenerProductosParaEtiquetas(ids);
+    res.json(data);
+  })
+);
+
+router.get(
   "/",
   asyncHandler(async (req, res) => {
     const query = z

@@ -56,6 +56,14 @@ export async function buscarProductosRapido(query: string) {
   });
 }
 
+export async function obtenerProductosParaEtiquetas(ids: number[]) {
+  return prisma.producto.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, sku: true, codigoBarras: true, nombre: true, precioVenta: true },
+    orderBy: { nombre: "asc" },
+  });
+}
+
 export async function obtenerProducto(id: number) {
   const producto = await prisma.producto.findUnique({ where: { id } });
   if (!producto) throw new AppError("PRODUCTO_NO_ENCONTRADO", "El producto no existe", 404);
@@ -171,3 +179,4 @@ export async function ajustarStock(
     });
   });
 }
+

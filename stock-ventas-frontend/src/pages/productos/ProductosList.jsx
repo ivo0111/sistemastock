@@ -12,6 +12,7 @@ export default function ProductosList() {
   const [busqueda, setBusqueda] = useState('')
   const [stockBajo, setStockBajo] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [seleccionados, setSeleccionados] = useState([])
   const limit = 20
   const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
 
@@ -30,6 +31,24 @@ export default function ProductosList() {
 
   useEffect(() => { load() }, [load])
 
+  // La selección de etiquetas se resetea al cambiar de página o filtro, para
+  // no arrastrar ids que ya no están visibles y confundir al usuario sobre
+  // qué va a imprimir.
+  useEffect(() => { setSeleccionados([]) }, [page, busqueda, stockBajo])
+
+  function toggleSeleccionado(id) {
+    setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  function toggleTodos() {
+    setSeleccionados(prev => prev.length === productos.length ? [] : productos.map(p => p.id))
+  }
+
+  function handleImprimirEtiquetas() {
+    if (seleccionados.length === 0) return
+    window.open(`/productos/etiquetas?ids=${seleccionados.join(',')}`, '_blank')
+  }
+
   async function handleDelete(id, nombre) {
     if (!confirm(`¿Dar de baja el producto "${nombre}"?`)) return
     try {
@@ -47,9 +66,18 @@ export default function ProductosList() {
       <div className="card">
         <div className="card-header">
           <span className="card-title">Productos ({total})</span>
-          {isAdmin && (
-            <Link to="/productos/nuevo" className="btn btn-primary">+ Nuevo Producto</Link>
-          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-outline"
+              disabled={seleccionados.length === 0}
+              onClick={handleImprimirEtiquetas}
+            >
+              Imprimir etiquetas{seleccionados.length > 0 ? ` (${seleccionados.length})` : ''}
+            </button>
+            {isAdmin && (
+              <Link to="/productos/nuevo" className="btn btn-primary">+ Nuevo Producto</Link>
+            )}
+          </div>
         </div>
 
         <div className="form-inline mb-4">
@@ -73,6 +101,13 @@ export default function ProductosList() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: 32 }}>
+                      <input
+                        type="checkbox"
+                        checked={productos.length > 0 && seleccionados.length === productos.length}
+                        onChange={toggleTodos}
+                      />
+                    </th>
                     <th>SKU</th>
                     <th>Nombre</th>
                     <th>Categoría</th>
@@ -87,6 +122,13 @@ export default function ProductosList() {
                 <tbody>
                   {productos.map(p => (
                     <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/productos/${p.id}/editar`)}>
+                      <td onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={seleccionados.includes(p.id)}
+                          onChange={() => toggleSeleccionado(p.id)}
+                        />
+                      </td>
                       <td>{p.sku}</td>
                       <td>{p.nombre}</td>
                       <td>{p.categoria?.nombre || '-'}</td>
@@ -117,7 +159,7 @@ export default function ProductosList() {
                     </tr>
                   ))}
                   {productos.length === 0 && (
-                    <tr><td colSpan={isAdmin ? 9 : 8} style={{ textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>No hay productos</td></tr>
+                    <tr><td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>No hay productos</td></tr>
                   )}
                 </tbody>
               </table>

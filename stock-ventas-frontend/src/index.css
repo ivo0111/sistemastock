@@ -365,3 +365,50 @@ select.form-control { appearance: auto; }
 .loading { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--gray-400); }
 
 .empty-state { text-align: center; padding: 40px; color: var(--gray-400); }
+
+/* Etiquetas imprimibles */
+.etiquetas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.etiqueta {
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  break-inside: avoid;
+}
+
+.etiqueta-nombre {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.etiqueta-precio {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.etiqueta-barcode {
+  max-width: 100%;
+}
+
+.etiqueta-sin-codigo {
+  font-size: 11px;
+  color: var(--gray-400);
+  padding: 8px 0;
+}
+
+@media print {
+  .etiquetas-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .etiqueta { border-style: solid; }
+  .etiqueta-precio { color: #000; }
+}

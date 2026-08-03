@@ -18,11 +18,20 @@ import CompraDetalle from './pages/compras/CompraDetalle'
 import Clientes from './pages/clientes/Clientes'
 import Caja from './pages/caja/Caja'
 import Reportes from './pages/reportes/Reportes'
+import EtiquetasImprimibles from './pages/productos/EtiquetasImprimibles'
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route
+        path="/productos/etiquetas"
+        element={
+          <ProtectedRoute>
+            <EtiquetasImprimibles />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/"
         element={
