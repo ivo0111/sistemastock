@@ -1,9 +1,11 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useStockBajo } from '../hooks/useStockBajo'
 
 export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { count } = useStockBajo(user)
 
   function handleLogout() {
     logout()
@@ -73,6 +75,7 @@ export default function Layout() {
           {isAdmin && (
             <NavLink to="/reportes" className="sidebar-link">
               Reportes
+              {count > 0 && <span className="sidebar-badge">{count}</span>}
             </NavLink>
           )}
         </nav>

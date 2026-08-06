@@ -2,25 +2,24 @@ import { useState, useEffect } from 'react'
 import { get } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { Link, useNavigate } from 'react-router-dom'
+import { useStockBajo } from '../hooks/useStockBajo'
 
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [stats, setStats] = useState(null)
-  const [stockBajo, setStockBajo] = useState([])
+  const { stockBajo } = useStockBajo(user)
   const [caja, setCaja] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       try {
-        const [ventasHoy, bajos, cajaActual] = await Promise.allSettled([
+        const [ventasHoy, cajaActual] = await Promise.allSettled([
           get('/reportes/ventas', { desde: new Date().toISOString().slice(0, 10), hasta: new Date(Date.now() + 86400000).toISOString().slice(0, 10) }),
-          get('/reportes/stock-bajo'),
           get('/caja/actual'),
         ])
         if (ventasHoy.status === 'fulfilled') setStats(ventasHoy.value)
-        if (bajos.status === 'fulfilled') setStockBajo(bajos.value || [])
         if (cajaActual.status === 'fulfilled') setCaja(cajaActual.value)
       } catch (err) {
         console.error(err)

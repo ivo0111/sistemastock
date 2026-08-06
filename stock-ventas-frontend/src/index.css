@@ -218,6 +218,22 @@ select.form-control { appearance: auto; }
 .badge-warning { background: #fef3c7; color: #92400e; }
 .badge-info { background: #dbeafe; color: #1e40af; }
 
+/* Sidebar notification badge */
+.sidebar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* Login */
 .login-page {
   min-height: 100vh;

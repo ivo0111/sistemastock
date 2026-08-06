@@ -1,9 +1,70 @@
 import { useState } from 'react'
 import { get } from '../../api/client'
+import { useAuth } from '../../context/AuthContext'
+import { useStockBajo } from '../../hooks/useStockBajo'
+
+const TIPO_REPORTE_POR_TAB = {
+  ventas: 'ventas',
+  productos: 'productos-mas-vendidos',
+  margen: 'margen',
+  'stock-bajo': 'stock-bajo',
+}
+
+// Exportamos a CSV (con BOM UTF-8 y ';' como separador) en vez de un .xlsx real:
+// no suma dependencias, mantiene el bundle chico, y Excel/Sheets/LibreOffice lo
+// abren directamente. El ';' se usa porque Excel en configuración regional es-AR
+// espera ese separador de listas (usa ',' como separador decimal), si no las
+// columnas no se separan bien al abrir el archivo con doble clic.
+function formatearFechaArchivo(fecha) {
+  const d = fecha instanceof Date ? fecha : new Date(fecha)
+  if (Number.isNaN(d.getTime())) return null
+  const dia = String(d.getDate()).padStart(2, '0')
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const anio = d.getFullYear()
+  return `${dia}-${mes}-${anio}`
+}
+
+function nombreArchivoExportacion(tab, rango) {
+  const tipo = TIPO_REPORTE_POR_TAB[tab] || tab
+  const desde = rango?.desde ? formatearFechaArchivo(rango.desde) : null
+  const hasta = rango?.hasta ? formatearFechaArchivo(rango.hasta) : null
+  if (desde && hasta) return `reporte-${tipo}_${desde}_${hasta}.csv`
+  return `reporte-${tipo}_${formatearFechaArchivo(new Date())}.csv`
+}
+
+function escaparCeldaCsv(valor) {
+  const texto = valor === null || valor === undefined ? '' : String(valor)
+  if (/[;"\n\r]/.test(texto)) {
+    return `"${texto.replace(/"/g, '""')}"`
+  }
+  return texto
+}
+
+function filasACsv(headers, filas) {
+  const lineas = [headers, ...filas].map(fila => fila.map(escaparCeldaCsv).join(';'))
+  return lineas.join('\r\n')
+}
+
+function descargarCsv(nombreArchivo, headers, filas) {
+  const csv = filasACsv(headers, filas)
+  const BOM = '\uFEFF' // para que Excel detecte UTF-8 y no rompa acentos/ñ
+  const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = nombreArchivo
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
 
 export default function Reportes() {
+  const { user } = useAuth()
+  const { count: stockBajoCount } = useStockBajo(user)
   const [tab, setTab] = useState('ventas')
   const [data, setData] = useState(null)
+  const [rango, setRango] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const [desdeVentas, setDesdeVentas] = useState('')
@@ -20,6 +81,7 @@ export default function Reportes() {
   async function loadReporte() {
     setLoading(true)
     setData(null)
+    setRango(null)
     try {
       let res
       if (tab === 'ventas') {
@@ -32,11 +94,58 @@ export default function Reportes() {
         res = await get('/reportes/stock-bajo')
       }
       setData(res?.data || res || [])
+      // El backend siempre devuelve el rango efectivamente usado (aplica default
+      // de últimos 30 días si no se especificó), así que lo guardamos aparte para
+      // que el nombre del archivo exportado refleje las fechas reales del reporte.
+      if (tab !== 'stock-bajo' && res?.desde && res?.hasta) {
+        setRango({ desde: res.desde, hasta: res.hasta })
+      }
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
+  }
+
+  function exportarReporte() {
+    if (!data) return
+    let headers, filas
+
+    if (tab === 'ventas') {
+      if (!Array.isArray(data) || data.length === 0) return
+      headers = ['Período', 'Total', 'Cantidad de Ventas']
+      filas = data.map(r => [r.periodo, Number(r.total).toFixed(2), r.cantidadVentas ?? 0])
+    } else if (tab === 'productos') {
+      if (!Array.isArray(data) || data.length === 0) return
+      headers = ['Producto', 'Cantidad Vendida', 'Total Vendido']
+      filas = data.map(r => [r.nombre, r.cantidadVendida, Number(r.totalVendido || 0).toFixed(2)])
+    } else if (tab === 'margen') {
+      // reporteMargen devuelve un objeto plano, no un array — lo exportamos
+      // como pares Concepto/Valor en vez de forzarlo a la forma tabular de los demás tabs.
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return
+      headers = ['Concepto', 'Valor']
+      filas = [
+        ['Ventas', Number(data.totalVentas || 0).toFixed(2)],
+        ['Costo', Number(data.totalCosto || 0).toFixed(2)],
+        ['Ganancia Bruta', Number(data.gananciaBruta || 0).toFixed(2)],
+        ['Margen %', data.margenPorcentaje ? Number(data.margenPorcentaje).toFixed(1) : '0'],
+      ]
+      if (data.nota) filas.push(['Nota', data.nota])
+    } else if (tab === 'stock-bajo') {
+      if (!Array.isArray(data) || data.length === 0) return
+      headers = ['Producto', 'SKU', 'Stock Actual', 'Stock Mínimo']
+      filas = data.map(p => [p.nombre, p.sku, p.stock_actual, p.stock_minimo])
+    } else {
+      return
+    }
+
+    descargarCsv(nombreArchivoExportacion(tab, rango), headers, filas)
+  }
+
+  function hayDatosParaExportar() {
+    if (!data) return false
+    if (tab === 'margen') return typeof data === 'object' && !Array.isArray(data)
+    return Array.isArray(data) && data.length > 0
   }
 
   function renderVentas() {
@@ -179,10 +288,11 @@ export default function Reportes() {
           { key: 'ventas', label: 'Ventas' },
           { key: 'productos', label: 'Más Vendidos' },
           { key: 'margen', label: 'Margen' },
-          { key: 'stock-bajo', label: 'Stock Bajo' },
+          { key: 'stock-bajo', label: 'Stock Bajo', badge: stockBajoCount },
         ].map(t => (
-          <button key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => { setTab(t.key); setData(null) }}>
+          <button key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => { setTab(t.key); setData(null); setRango(null) }}>
             {t.label}
+            {t.badge > 0 && <span className="sidebar-badge" style={{ marginLeft:"5px" }}>{t.badge}</span>}
           </button>
         ))}
       </div>
@@ -236,9 +346,12 @@ export default function Reportes() {
             </div>
           </>
         )}
-        <div className="form-group" style={{ margin: 0, alignSelf: tab === 'stock-bajo' ? 'center' : 'flex-end' }}>
+        <div className="form-group" style={{ margin: 0, alignSelf: tab === 'stock-bajo' ? 'center' : 'flex-end', display: 'flex', gap: 8 }}>
           <button className="btn btn-primary" onClick={loadReporte} disabled={loading}>
             {loading ? 'Cargando...' : 'Generar Reporte'}
+          </button>
+          <button className="btn btn-outline" onClick={exportarReporte} disabled={loading || !hayDatosParaExportar()}>
+            Exportar a CSV
           </button>
         </div>
       </div>
