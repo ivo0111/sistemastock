@@ -28,7 +28,7 @@ const proveedorSchema = z.object({
   nombre: z.string().min(1),
   contacto: z.string().optional(),
   telefono: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().or(z.literal('')),
 });
 
 router.post(
