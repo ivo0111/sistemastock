@@ -10,7 +10,7 @@ const CONDICIONES_IVA = [
   { value: 'EXENTO', label: 'Exento' },
 ]
 
-const INITIAL = { nombre: '', telefono: '', email: '', cuit: '', condicionIva: '' }
+const INITIAL = { nombre: '', telefono: '', email: '', cuit: '', condicionIva: '', domicilioComercial: '' }
 const INITIAL_AJUSTE = { monto: '', motivo: '', tipo: 'CARGO' }
 
 export default function Clientes() {
@@ -65,6 +65,7 @@ export default function Clientes() {
       email: cliente.email || '',
       cuit: cliente.cuit || '',
       condicionIva: cliente.condicionIva || '',
+      domicilioComercial: cliente.domicilioComercial || '',
     })
     setEditId(cliente.id)
     setError('')
@@ -207,6 +208,10 @@ export default function Clientes() {
                     ))}
                   </select>
                 </div>
+              </div>
+              <div className="form-group">
+                <label>Domicilio Comercial</label>
+                <input className="form-control" name="domicilioComercial" placeholder="Ej: Av. San Martín 1234, Mendoza" value={form.domicilioComercial} onChange={handleChange} />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Cancelar</button>

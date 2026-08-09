@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { get, post, getHtml } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
+import html2pdf from 'html2pdf.js'
 
 export default function VentaDetalle() {
   const { id } = useParams()
@@ -12,6 +13,8 @@ export default function VentaDetalle() {
   const [motivoAnulacion, setMotivoAnulacion] = useState('')
   const [anulando, setAnulando] = useState(false)
   const [error, setError] = useState('')
+  const [copias, setCopias] = useState('1')
+  const [descargandoPdf, setDescargandoPdf] = useState(false)
   const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
 
   useEffect(() => {
@@ -47,9 +50,20 @@ export default function VentaDetalle() {
           <span className="card-title">Venta #{venta.id}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-outline" onClick={() => navigate('/ventas')}>Volver</button>
+            <select
+              className="form-control"
+              style={{ width: 'auto' }}
+              value={copias}
+              onChange={e => setCopias(e.target.value)}
+              title="Cantidad de copias a imprimir"
+            >
+              <option value="1">1 copia (Original)</option>
+              <option value="2">2 copias (Original + Duplicado)</option>
+              <option value="3">3 copias (Original + Duplicado + Triplicado)</option>
+            </select>
             <button className="btn btn-outline" onClick={async () => {
               try {
-                const html = await getHtml(`/ventas/${venta.id}/comprobante`)
+                const html = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
                 const win = window.open('', '_blank')
                 win.document.write(html)
                 win.document.close()
@@ -58,6 +72,32 @@ export default function VentaDetalle() {
               }
             }}>
               Comprobante
+            </button>
+            <button className="btn btn-primary" disabled={descargandoPdf} onClick={async () => {
+              setDescargandoPdf(true)
+              try {
+                const html = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
+                const container = document.createElement('div')
+                container.innerHTML = html
+                container.style.position = 'fixed'
+                container.style.left = '-9999px'
+                container.style.top = '0'
+                document.body.appendChild(container)
+                await html2pdf().set({
+                  margin: 10,
+                  filename: `comprobante-venta-${venta.id}.pdf`,
+                  image: { type: 'jpeg', quality: 0.98 },
+                  html2canvas: { scale: 2 },
+                  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                }).from(container).save()
+                document.body.removeChild(container)
+              } catch (err) {
+                setError(err.message)
+              } finally {
+                setDescargandoPdf(false)
+              }
+            }}>
+              {descargandoPdf ? 'Descargando...' : 'Descargar PDF'}
             </button>
           </div>
         </div>

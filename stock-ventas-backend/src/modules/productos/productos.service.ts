@@ -79,6 +79,8 @@ interface CrearProductoInput {
   precioVenta: number;
   stockInicial: number;
   stockMinimo: number;
+  alicuotaIva?: number;
+  unidadMedida?: string;
   usuarioId: number;
 }
 
@@ -94,16 +96,18 @@ export async function crearProducto(input: CrearProductoInput) {
   // Creación de producto + movimiento de stock inicial en una sola transacción
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const producto = await tx.producto.create({
-      data: {
-        sku: input.sku,
-        codigoBarras: input.codigoBarras || null,
-        nombre: input.nombre,
-        categoriaId: input.categoriaId,
-        precioCosto: input.precioCosto,
-        precioVenta: input.precioVenta,
-        stockActual: input.stockInicial,
-        stockMinimo: input.stockMinimo,
-      },
+       data: {
+         sku: input.sku,
+         codigoBarras: input.codigoBarras || null,
+         nombre: input.nombre,
+         categoriaId: input.categoriaId,
+         precioCosto: input.precioCosto,
+         precioVenta: input.precioVenta,
+         stockActual: input.stockInicial,
+         stockMinimo: input.stockMinimo,
+         alicuotaIva: input.alicuotaIva,
+         unidadMedida: input.unidadMedida,
+       },
     });
 
     if (input.stockInicial > 0) {
@@ -128,6 +132,8 @@ interface ActualizarProductoInput {
   precioCosto?: number;
   precioVenta?: number;
   stockMinimo?: number;
+  alicuotaIva?: number;
+  unidadMedida?: string;
 }
 
 export async function actualizarProducto(id: number, input: ActualizarProductoInput) {

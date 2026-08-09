@@ -73,6 +73,9 @@ router.get(
   })
 );
 
+// Alícuotas de IVA vigentes en Argentina que puede tener un producto.
+const ALICUOTAS_IVA_VALIDAS = [21, 10.5, 27, 5, 2.5, 0] as const;
+
 const crearSchema = z.object({
   sku: z.string().min(1),
   codigoBarras: z.string().optional(),
@@ -82,6 +85,10 @@ const crearSchema = z.object({
   precioVenta: z.number().nonnegative(),
   stockInicial: z.number().int().nonnegative().default(0),
   stockMinimo: z.number().int().nonnegative().default(0),
+  alicuotaIva: z.number().refine((v) => ALICUOTAS_IVA_VALIDAS.includes(v as any), {
+    message: "La alícuota de IVA debe ser una de: 21, 10.5, 27, 5, 2.5, 0",
+  }).optional(),
+  unidadMedida: z.string().min(1).optional(),
 });
 
 // Solo ADMIN puede crear/editar/borrar productos y ajustar stock manualmente
@@ -102,6 +109,10 @@ const actualizarSchema = z.object({
   precioCosto: z.number().nonnegative().optional(),
   precioVenta: z.number().nonnegative().optional(),
   stockMinimo: z.number().int().nonnegative().optional(),
+  alicuotaIva: z.number().refine((v) => ALICUOTAS_IVA_VALIDAS.includes(v as any), {
+    message: "La alícuota de IVA debe ser una de: 21, 10.5, 27, 5, 2.5, 0",
+  }).optional(),
+  unidadMedida: z.string().min(1).optional(),
 });
 
 router.put(

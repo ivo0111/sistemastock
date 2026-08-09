@@ -105,6 +105,10 @@ model Producto {
   precioVenta   Decimal  @map("precio_venta") @db.Decimal(12, 2)
   stockActual   Int      @default(0) @map("stock_actual")
   stockMinimo   Int      @default(0) @map("stock_minimo")
+  // Datos fiscales para el comprobante ARCA: alícuota de IVA del producto
+  // (21, 10.5, 27, 5, 2.5 o 0) y su unidad de medida (texto libre).
+  alicuotaIva   Decimal  @default(21.00) @map("alicuota_iva") @db.Decimal(4, 2)
+  unidadMedida  String   @default("unidades") @map("unidad_medida")
   activo        Boolean  @default(true)
   creadoEn      DateTime @default(now()) @map("creado_en")
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
@@ -155,6 +159,7 @@ model Cliente {
   creadoEn             DateTime @default(now()) @map("creado_en")
   cuit         String?       @map("cuit")
   condicionIva CondicionIva? @map("condicion_iva")
+  domicilioComercial String? @map("domicilio_comercial")
 
   ventas Venta[]
   movimientosCuentaCorriente MovimientoCuentaCorriente[]

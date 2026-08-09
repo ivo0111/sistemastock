@@ -56,6 +56,7 @@ const clienteSchema = z.object({
     .enum(["RESPONSABLE_INSCRIPTO", "MONOTRIBUTO", "CONSUMIDOR_FINAL", "EXENTO"])
     .nullable()
     .optional(),
+  domicilioComercial: z.string().optional(),
 });
 
 router.post(

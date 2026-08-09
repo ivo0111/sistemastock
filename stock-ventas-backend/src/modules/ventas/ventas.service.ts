@@ -160,7 +160,7 @@ const includeComprobante = {
   usuario: true,
 } satisfies Prisma.VentaInclude;
 
-export async function generarComprobante(id: number): Promise<string> {
+export async function generarComprobante(id: number, copias = 1): Promise<string> {
   let venta = await prisma.venta.findUnique({ where: { id }, include: includeComprobante });
   if (!venta) throw new AppError("VENTA_NO_ENCONTRADA", "La venta no existe", 404);
 
@@ -201,7 +201,7 @@ export async function generarComprobante(id: number): Promise<string> {
     });
   }
 
-  return generarHtmlComprobante(venta);
+  return generarHtmlComprobante(venta, undefined, copias);
 }
 
 export async function anularVenta(id: number, motivo: string, usuarioId: number) {

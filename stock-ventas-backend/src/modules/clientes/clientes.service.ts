@@ -9,6 +9,7 @@ interface ClienteInput {
   cuenta_corriente_saldo?: number;
   cuit?: string;
   condicionIva?: CondicionIva | null;
+  domicilioComercial?: string;
 }
 
 export async function listarClientes(busqueda?: string) {

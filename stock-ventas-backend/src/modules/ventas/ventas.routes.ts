@@ -81,12 +81,17 @@ router.post(
   })
 );
 
+const comprobanteQuerySchema = z.object({
+  copias: z.coerce.number().min(1).max(3).optional(),
+});
+
 // Genera (o reutiliza, si ya tiene CAE) el comprobante imprimible de la venta.
 // Sin restricción de rol: ver el detalle de una venta tampoco la tiene.
 router.get(
   "/:id/comprobante",
   asyncHandler(async (req, res) => {
-    const html = await service.generarComprobante(Number(req.params.id));
+    const { copias } = comprobanteQuerySchema.parse(req.query);
+    const html = await service.generarComprobante(Number(req.params.id), copias);
     res.type("html").send(html);
   })
 );

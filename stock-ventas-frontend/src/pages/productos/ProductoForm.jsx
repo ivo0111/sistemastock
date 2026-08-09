@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { get, post, put } from '../../api/client'
 
+const ALICUOTAS_IVA = [21, 10.5, 27, 5, 2.5, 0]
+
 export default function ProductoForm() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -19,6 +21,8 @@ export default function ProductoForm() {
     precioVenta: '',
     stockInicial: '',
     stockMinimo: '',
+    alicuotaIva: '21',
+    unidadMedida: 'unidades',
   })
 
   useEffect(() => {
@@ -35,6 +39,8 @@ export default function ProductoForm() {
             precioVenta: p.precioVenta ?? p.precio_venta ?? '',
             stockInicial: '',
             stockMinimo: p.stockMinimo ?? p.stock_minimo ?? '',
+            alicuotaIva: String(p.alicuotaIva ?? p.alicuota_iva ?? '21'),
+            unidadMedida: p.unidadMedida ?? p.unidad_medida ?? 'unidades',
           })
         })
         .finally(() => setLoading(false))
@@ -57,6 +63,8 @@ export default function ProductoForm() {
         precioCosto: Number(form.precioCosto),
         precioVenta: Number(form.precioVenta),
         stockMinimo: Number(form.stockMinimo),
+        alicuotaIva: Number(form.alicuotaIva),
+        unidadMedida: form.unidadMedida,
       }
       if (form.codigoBarras) body.codigoBarras = form.codigoBarras
       if (!isEdit) body.stockInicial = Number(form.stockInicial)
@@ -113,6 +121,20 @@ export default function ProductoForm() {
           <div className="form-group">
             <label>Precio de Venta</label>
             <input className="form-control" name="precioVenta" type="number" step="0.01" value={form.precioVenta} onChange={handleChange} required />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Alícuota IVA</label>
+            <select className="form-control" name="alicuotaIva" value={form.alicuotaIva} onChange={handleChange}>
+              {ALICUOTAS_IVA.map(a => (
+                <option key={a} value={a}>{String(a).replace('.', ',')}%</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Unidad de Medida</label>
+            <input className="form-control" name="unidadMedida" placeholder="Ej: unidades, kg, litros" value={form.unidadMedida} onChange={handleChange} />
           </div>
         </div>
         <div className="form-row">
