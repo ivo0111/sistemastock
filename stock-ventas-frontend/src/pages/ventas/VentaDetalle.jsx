@@ -76,21 +76,27 @@ export default function VentaDetalle() {
             <button className="btn btn-primary" disabled={descargandoPdf} onClick={async () => {
               setDescargandoPdf(true)
               try {
-                const html = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
-                const container = document.createElement('div')
-                container.innerHTML = html
-                container.style.position = 'fixed'
-                container.style.left = '-9999px'
-                container.style.top = '0'
-                document.body.appendChild(container)
+                const rawHtml = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
+                const html = rawHtml.replace(/onload="window\.print\(\)"/, '')
+                const iframe = document.createElement('iframe')
+                iframe.style.position = 'fixed'
+                iframe.style.left = '-9999px'
+                iframe.style.top = '0'
+                iframe.style.width = '210mm'
+                iframe.style.height = '297mm'
+                document.body.appendChild(iframe)
+                iframe.contentDocument.open()
+                iframe.contentDocument.write(html)
+                iframe.contentDocument.close()
+                await new Promise(r => setTimeout(r, 500))
                 await html2pdf().set({
                   margin: 10,
                   filename: `comprobante-venta-${venta.id}.pdf`,
                   image: { type: 'jpeg', quality: 0.98 },
-                  html2canvas: { scale: 2 },
+                  html2canvas: { scale: 2, useCORS: true },
                   jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                }).from(container).save()
-                document.body.removeChild(container)
+                }).from(iframe.contentDocument.body).save()
+                document.body.removeChild(iframe)
               } catch (err) {
                 setError(err.message)
               } finally {

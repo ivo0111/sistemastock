@@ -19,6 +19,9 @@ export const arcaConfig = {
   razonSocial: process.env.ARCA_RAZON_SOCIAL || "Mi Empresa",
   condicionIvaEmisor: process.env.ARCA_CONDICION_IVA_EMISOR || "MONOTRIBUTO",
   puntoVenta: Number(process.env.ARCA_PUNTO_VENTA || 1),
+  domicilioComercial: process.env.ARCA_DOMICILIO_COMERCIAL || "",
+  ingresosBrutos: process.env.ARCA_INGRESOS_BRUTOS || "",
+  fechaInicioActividades: process.env.ARCA_FECHA_INICIO_ACTIVIDADES || "",
 
   // Certificado digital emitido por ARCA (portal "Administración de
   // Certificados Digitales"), necesario solo en modo homologacion/produccion.

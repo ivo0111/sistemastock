@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { arcaConfig } from "../../config/arca.config";
 import { ResultadoCAE } from "../arca/arca.types";
+import { CONDICION_IVA_LABEL, CODIGO_TIPO_COMPROBANTE } from "./arca.labels";
 
 type VentaConDetalle = Prisma.VentaGetPayload<{
   include: { items: { include: { producto: true } }; cliente: true; usuario: true };
@@ -97,6 +98,7 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
         const subConIva = sub * divisor;
         return `
       <tr>
+        <td>${escapeHtml(item.producto.sku || "-")}</td>
         <td>${escapeHtml(item.producto.nombre)}</td>
         <td>${escapeHtml(item.producto.unidadMedida)}</td>
         <td class="num">${formatearMoneda(precioSinIva)}</td>
@@ -110,14 +112,28 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     )
     .join("");
 
-  const repeticiones = Array.from({ length: copias }, () => `
+  const condicionIvaEmisorLabel =
+    CONDICION_IVA_LABEL[arcaConfig.condicionIvaEmisor] ?? arcaConfig.condicionIvaEmisor;
+  const condicionIvaClienteLabel =
+    CONDICION_IVA_LABEL[venta.cliente?.condicionIva ?? "CONSUMIDOR_FINAL"] ?? "Consumidor Final";
+  const codigoTipoCmp =
+    CODIGO_TIPO_COMPROBANTE[venta.tipoComprobante ?? "FACTURA_B"] ?? "";
+
+  const ETIQUETA_COPIA = ["ORIGINAL", "DUPLICADO", "TRIPLICADO"];
+
+  const repeticiones = Array.from({ length: copias }, (_, indice) => `
   <div class="page">
+  <div class="etiqueta-copia">${ETIQUETA_COPIA[indice] ?? ""}</div>
   <div class="header">
     <div class="datos-empresa">
       <h1>${escapeHtml(arcaConfig.razonSocial)}</h1>
       <div>CUIT: ${escapeHtml(arcaConfig.cuitEmisor || "sin configurar")}</div>
+      <div>Domicilio Comercial: ${escapeHtml(arcaConfig.domicilioComercial || "-")}</div>
+      <div>Ingresos Brutos: ${escapeHtml(arcaConfig.ingresosBrutos || "-")}</div>
+      <div>Condición frente al IVA: ${escapeHtml(condicionIvaEmisorLabel)}</div>
+      <div>Fecha de Inicio de Actividades: ${escapeHtml(arcaConfig.fechaInicioActividades || "-")}</div>
     </div>
-    <div class="tipo-cmp">${tipoLabel}<br/>Pto. Vta ${venta.puntoVenta}<br/>Nº ${String(
+    <div class="tipo-cmp">${tipoLabel}<br/><span class="cod-tipo-cmp">COD. ${codigoTipoCmp}</span><br/>Pto. Vta ${venta.puntoVenta}<br/>Nº ${String(
     venta.numeroComprobante
   ).padStart(8, "0")}</div>
   </div>
@@ -127,12 +143,19 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     <strong>Cliente:</strong> ${escapeHtml(venta.cliente?.nombre ?? "Consumidor Final")}${
       venta.cliente?.cuit ? ` — CUIT/CUIL: ${escapeHtml(venta.cliente.cuit)}` : ""
     }<br/>
+    <strong>Condición frente al IVA:</strong> ${escapeHtml(condicionIvaClienteLabel)}<br/>
+    ${
+      venta.cliente?.domicilioComercial
+        ? `<strong>Domicilio Comercial:</strong> ${escapeHtml(venta.cliente.domicilioComercial)}<br/>`
+        : ""
+    }
+    <strong>Condición de venta:</strong> Contado<br/>
     <strong>Forma de pago:</strong> ${venta.formaPago} &nbsp;|&nbsp; <strong>Atendió:</strong> ${escapeHtml(venta.usuario.nombre)}
   </div>
 
   <table>
     <thead>
-      <tr><th>Producto</th><th>U. medida</th><th class="num">P. Unit.</th><th class="num">% Bonif.</th><th class="num">Cant.</th><th class="num">Subtotal</th><th class="num">Alíc. IVA</th><th class="num">Subtotal c/IVA</th></tr>
+      <tr><th>Código</th><th>Producto</th><th>U. medida</th><th class="num">P. Unit.</th><th class="num">% Bonif.</th><th class="num">Cant.</th><th class="num">Subtotal</th><th class="num">Alíc. IVA</th><th class="num">Subtotal c/IVA</th></tr>
     </thead>
     <tbody>
       ${filasItems}
@@ -156,6 +179,7 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
         ${desgloseIva
           .map((d) => `<div class="iva-linea"><span>IVA ${d.alicuota}%:</span><span>${formatearMoneda(d.montoIva)}</span></div>`)
           .join("")}
+        <div class="iva-linea"><span>Importe Otros Tributos:</span><span>${formatearMoneda(0)}</span></div>
       </div>`
         : ""
       }
@@ -208,6 +232,12 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
   .page-footer {
     margin-top: auto;
   }
+  .etiqueta-copia {
+    font-size: 9pt;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
   .header {
     display: flex;
     justify-content: space-between;
@@ -226,6 +256,10 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     text-align: center;
     line-height: 1.4;
     white-space: nowrap;
+  }
+  .tipo-cmp .cod-tipo-cmp {
+    font-size: 8.5pt;
+    font-weight: bold;
   }
   .datos-cliente {
     font-size: 10pt;
