@@ -3,3 +3,4 @@ allowBuilds:
   '@prisma/engines': true
   bcrypt: true
   prisma: true
+  puppeteer: false

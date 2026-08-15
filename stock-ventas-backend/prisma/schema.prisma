@@ -117,6 +117,7 @@ model Producto {
   movimientosStock  MovimientoStock[]
   ventaItems        VentaItem[]
   compraItems       CompraItem[]
+  promociones       Promocion[]
 
   @@index([nombre])
   @@index([stockActual])
@@ -222,6 +223,7 @@ model VentaItem {
   productoId     Int     @map("producto_id")
   cantidad       Int
   precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  bonificacionPorcentaje Decimal @default(0) @map("bonificacion_porcentaje") @db.Decimal(5, 2)
   subtotal       Decimal @db.Decimal(12, 2)
 
   venta    Venta    @relation(fields: [ventaId], references: [id])
@@ -291,4 +293,32 @@ model Caja {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("caja")
+}
+
+// ─────────────────────────────────────────────
+// Promociones
+// ─────────────────────────────────────────────
+
+enum TipoPromocion {
+  DOS_POR_UNO
+  DESCUENTO_PORCENTUAL
+  SEGUNDA_UNIDAD
+}
+
+model Promocion {
+  id             Int            @id @default(autoincrement())
+  nombre         String
+  tipo           TipoPromocion
+  productoId     Int?           @map("producto_id")
+  valor          Decimal        @db.Decimal(5, 2)
+  cantidadMinima Int            @default(1) @map("cantidad_minima")
+  activo         Boolean        @default(true)
+  fechaInicio    DateTime?      @map("fecha_inicio")
+  fechaFin       DateTime?      @map("fecha_fin")
+  creadoEn       DateTime       @default(now()) @map("creado_en")
+  actualizadoEn  DateTime       @updatedAt @map("actualizado_en")
+
+  producto Producto? @relation(fields: [productoId], references: [id])
+
+  @@map("promociones")
 }

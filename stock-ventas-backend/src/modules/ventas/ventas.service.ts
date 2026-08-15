@@ -12,6 +12,7 @@ interface ItemInput {
   productoId: number;
   cantidad: number;
   precioUnitario: number;
+  bonificacion?: number;
 }
 
 interface CrearVentaInput {
@@ -35,6 +36,7 @@ export async function crearVenta(input: CrearVentaInput) {
       productoId: number;
       cantidad: number;
       precioUnitario: number;
+      bonificacionPorcentaje: Decimal;
       subtotal: Decimal;
     }[] = [];
 
@@ -63,13 +65,17 @@ export async function crearVenta(input: CrearVentaInput) {
         );
       }
 
-      const subtotal = new Decimal(item.precioUnitario).mul(item.cantidad);
+      const bonificacion = new Decimal(item.bonificacion ?? 0);
+      const subtotal = new Decimal(item.precioUnitario)
+        .mul(item.cantidad)
+        .mul(new Decimal(1).sub(bonificacion.div(100)));
       total = total.add(subtotal);
 
       itemsData.push({
         productoId: item.productoId,
         cantidad: item.cantidad,
         precioUnitario: item.precioUnitario,
+        bonificacionPorcentaje: bonificacion,
         subtotal,
       });
 

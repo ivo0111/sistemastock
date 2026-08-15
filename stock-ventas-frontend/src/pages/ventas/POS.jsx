@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { get, post } from '../../api/client'
 import { useNavigate } from 'react-router-dom'
 
+let nextLineId = 1
+
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -52,37 +54,83 @@ export default function POS() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  function addToCart(p) {
+  function addToCart(p, bonificacion = 0) {
     if (p.stockActual <= 0) return
     setCart(prev => {
-      const existing = prev.find(item => item.productoId === p.id)
+      const existing = prev.find(
+        item => item.productoId === p.id && item.bonificacion === bonificacion
+      )
       if (existing) {
         return prev.map(item =>
-          item.productoId === p.id
+          item.productoId === p.id && item.bonificacion === bonificacion
             ? { ...item, cantidad: item.cantidad + 1 }
             : item
         )
       }
-      return [...prev, { productoId: p.id, nombre: p.nombre, sku: p.sku, precioUnitario: Number(p.precioVenta), cantidad: 1, stockActual: p.stockActual }]
+      return [...prev, {
+        lineId: nextLineId++,
+        productoId: p.id,
+        nombre: p.nombre,
+        sku: p.sku,
+        precioUnitario: Number(p.precioVenta),
+        cantidad: 1,
+        stockActual: p.stockActual,
+        bonificacion,
+      }]
     })
     searchRef.current?.focus()
   }
 
-  function updateQty(productoId, cantidad) {
+  function addFirstResultToCart() {
+    const activos = productos.filter(p => p.activo !== false)
+    if (activos.length > 0) {
+      addToCart(activos[0])
+      setBusqueda('')
+    }
+  }
+
+  function updateQty(lineId, cantidad) {
     if (cantidad <= 0) {
-      setCart(prev => prev.filter(item => item.productoId !== productoId))
+      setCart(prev => prev.filter(item => item.lineId !== lineId))
       return
     }
     setCart(prev => prev.map(item =>
-      item.productoId === productoId ? { ...item, cantidad: Math.min(cantidad, item.stockActual) } : item
+      item.lineId === lineId ? { ...item, cantidad: Math.min(cantidad, item.stockActual) } : item
     ))
   }
 
-  function removeFromCart(productoId) {
-    setCart(prev => prev.filter(item => item.productoId !== productoId))
+  function updateBonificacion(lineId, nuevaBonificacion) {
+    const bn = Math.min(100, Math.max(0, Number(nuevaBonificacion) || 0))
+    setCart(prev => {
+      const target = prev.find(item => item.lineId === lineId)
+      if (!target) return prev
+      const existing = prev.find(
+        item => item.productoId === target.productoId && item.bonificacion === bn && item.lineId !== lineId
+      )
+      if (existing) {
+        return prev
+          .map(item =>
+            item.lineId === lineId
+              ? { ...item, cantidad: item.cantidad + existing.cantidad }
+              : item
+          )
+          .filter(item => item.lineId !== existing.lineId)
+      }
+      return prev.map(item =>
+        item.lineId === lineId ? { ...item, bonificacion: bn } : item
+      )
+    })
   }
 
-  const subtotal = cart.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0)
+  function removeFromCart(lineId) {
+    setCart(prev => prev.filter(item => item.lineId !== lineId))
+  }
+
+  function cartItemSubtotal(item) {
+    return item.precioUnitario * item.cantidad * (1 - item.bonificacion / 100)
+  }
+
+  const subtotal = cart.reduce((sum, item) => sum + cartItemSubtotal(item), 0)
   const total = Math.max(0, subtotal - Number(descuento))
 
   async function handleCheckout() {
@@ -96,6 +144,7 @@ export default function POS() {
           productoId: item.productoId,
           cantidad: item.cantidad,
           precioUnitario: item.precioUnitario,
+          bonificacion: item.bonificacion,
         })),
         formaPago: formaPago.toUpperCase(),
         descuento: Number(descuento),
@@ -119,11 +168,13 @@ export default function POS() {
             onChange={e => setBusqueda(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && busqueda) {
+                e.preventDefault()
                 const exactMatch = productos.filter(p => p.codigoBarras === busqueda)
                 if (exactMatch.length === 1) {
-                  e.preventDefault()
                   addToCart(exactMatch[0])
                   setBusqueda('')
+                } else {
+                  addFirstResultToCart()
                 }
               }
             }}
@@ -147,15 +198,37 @@ export default function POS() {
         <h3>Carrito ({cart.length} items)</h3>
         <div className="pos-cart-items">
           {cart.map(item => (
-            <div key={item.productoId} className="pos-cart-item">
-              <div className="item-name">{item.nombre}</div>
-              <div>
-                <button className="btn btn-sm btn-outline" onClick={() => updateQty(item.productoId, item.cantidad - 1)}>-</button>
-                <span className="item-qty">{item.cantidad}</span>
-                <button className="btn btn-sm btn-outline" onClick={() => updateQty(item.productoId, item.cantidad + 1)}>+</button>
+            <div key={item.lineId} className="pos-cart-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="item-name">
+                  {item.nombre}
+                  {item.bonificacion > 0 && (
+                    <span className="badge badge-warning" style={{ marginLeft: 6, fontSize: 11 }}>
+                      -{item.bonificacion}%
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <button className="btn btn-sm btn-outline" onClick={() => updateQty(item.lineId, item.cantidad - 1)}>-</button>
+                  <span className="item-qty">{item.cantidad}</span>
+                  <button className="btn btn-sm btn-outline" onClick={() => updateQty(item.lineId, item.cantidad + 1)}>+</button>
+                </div>
+                <div className="item-total">${cartItemSubtotal(item).toFixed(2)}</div>
+                <button className="item-remove" onClick={() => removeFromCart(item.lineId)}>×</button>
               </div>
-              <div className="item-total">${(item.precioUnitario * item.cantidad).toFixed(2)}</div>
-              <button className="item-remove" onClick={() => removeFromCart(item.productoId)}>×</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 4 }}>
+                <label style={{ fontSize: 12, color: 'var(--gray-500)' }}>% Bonif:</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={item.bonificacion}
+                  onChange={e => updateBonificacion(item.lineId, e.target.value)}
+                  style={{ width: 56, padding: '2px 4px', fontSize: 12, border: '1px solid var(--gray-300)', borderRadius: 4 }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>%</span>
+              </div>
             </div>
           ))}
           {cart.length === 0 && <div className="text-sm text-gray" style={{ textAlign: 'center', padding: 20 }}>Agregá productos para iniciar la venta</div>}

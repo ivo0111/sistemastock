@@ -4,6 +4,7 @@ import { EstadoVenta } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import * as service from "./ventas.service";
+import { generarPdfComprobante } from "./comprobante.pdf";
 import { FormaPago } from "@prisma/client";
 
 const router = Router();
@@ -18,6 +19,7 @@ const crearVentaSchema = z.object({
         productoId: z.number(),
         cantidad: z.number().int().positive(),
         precioUnitario: z.number().nonnegative(),
+        bonificacion: z.number().min(0).max(100).optional(),
       })
     )
     .min(1),
@@ -83,6 +85,7 @@ router.post(
 
 const comprobanteQuerySchema = z.object({
   copias: z.coerce.number().min(1).max(3).optional(),
+  format: z.enum(["html", "pdf"]).optional(),
 });
 
 // Genera (o reutiliza, si ya tiene CAE) el comprobante imprimible de la venta.
@@ -90,8 +93,16 @@ const comprobanteQuerySchema = z.object({
 router.get(
   "/:id/comprobante",
   asyncHandler(async (req, res) => {
-    const { copias } = comprobanteQuerySchema.parse(req.query);
+    const { copias, format } = comprobanteQuerySchema.parse(req.query);
     const html = await service.generarComprobante(Number(req.params.id), copias);
+
+    if (format === "pdf") {
+      const pdf = await generarPdfComprobante(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="comprobante-venta-${req.params.id}.pdf"`);
+      return res.send(pdf);
+    }
+
     res.type("html").send(html);
   })
 );

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { get, post, getHtml } from '../../api/client'
+import { get, post, getHtml, getBlob } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
-import html2pdf from 'html2pdf.js'
 
 export default function VentaDetalle() {
   const { id } = useParams()
@@ -76,27 +75,15 @@ export default function VentaDetalle() {
             <button className="btn btn-primary" disabled={descargandoPdf} onClick={async () => {
               setDescargandoPdf(true)
               try {
-                const rawHtml = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
-                const html = rawHtml.replace(/onload="window\.print\(\)"/, '')
-                const iframe = document.createElement('iframe')
-                iframe.style.position = 'fixed'
-                iframe.style.left = '-9999px'
-                iframe.style.top = '0'
-                iframe.style.width = '210mm'
-                iframe.style.height = '297mm'
-                document.body.appendChild(iframe)
-                iframe.contentDocument.open()
-                iframe.contentDocument.write(html)
-                iframe.contentDocument.close()
-                await new Promise(r => setTimeout(r, 500))
-                await html2pdf().set({
-                  margin: 10,
-                  filename: `comprobante-venta-${venta.id}.pdf`,
-                  image: { type: 'jpeg', quality: 0.98 },
-                  html2canvas: { scale: 2, useCORS: true },
-                  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                }).from(iframe.contentDocument.body).save()
-                document.body.removeChild(iframe)
+                const blob = await getBlob(`/ventas/${venta.id}/comprobante?copias=${copias}&format=pdf`)
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `comprobante-venta-${venta.id}.pdf`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
               } catch (err) {
                 setError(err.message)
               } finally {
@@ -152,6 +139,7 @@ export default function VentaDetalle() {
                 <th>SKU</th>
                 <th>Cantidad</th>
                 <th>P. Unitario</th>
+                <th>Bonif %</th>
                 <th>Subtotal</th>
               </tr>
             </thead>
@@ -162,7 +150,8 @@ export default function VentaDetalle() {
                   <td>{item.producto?.sku || '-'}</td>
                   <td>{item.cantidad}</td>
                   <td>${Number(item.precioUnitario).toFixed(2)}</td>
-                  <td style={{ fontWeight: 600 }}>${(item.cantidad * Number(item.precioUnitario)).toFixed(2)}</td>
+                  <td>{Number(item.bonificacionPorcentaje || 0) > 0 ? `${Number(item.bonificacionPorcentaje)}%` : '-'}</td>
+                  <td style={{ fontWeight: 600 }}>${Number(item.subtotal).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

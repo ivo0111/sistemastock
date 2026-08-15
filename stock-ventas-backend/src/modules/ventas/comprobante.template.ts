@@ -91,7 +91,7 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     .map(
       (item) => {
         const alicuota = Number(item.producto.alicuotaIva ?? 21);
-        const bonif = 0;
+        const bonif = Number(item.bonificacionPorcentaje ?? 0);
         const divisor = 1 + alicuota / 100;
         const precioSinIva = Number(item.precioUnitario) / divisor;
         const sub = precioSinIva * Number(item.cantidad) * (1 - bonif / 100);
@@ -222,15 +222,12 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
   }
   .page {
     page-break-after: always;
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
   }
   .page:last-child {
     page-break-after: auto;
   }
   .page-footer {
-    margin-top: auto;
+    margin-top: 30px;
   }
   .etiqueta-copia {
     font-size: 9pt;
@@ -239,12 +236,16 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     margin-bottom: 4px;
   }
   .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    display: table;
+    width: 100%;
     border-bottom: 2px solid #222;
     padding-bottom: 10px;
     margin-bottom: 14px;
+  }
+  .header .datos-empresa,
+  .header .tipo-cmp {
+    display: table-cell;
+    vertical-align: top;
   }
   .header h1 { font-size: 16pt; margin: 0 0 3px; }
   .header .datos-empresa { font-size: 9pt; line-height: 1.4; }
@@ -256,6 +257,7 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     text-align: center;
     line-height: 1.4;
     white-space: nowrap;
+    width: 45mm;
   }
   .tipo-cmp .cod-tipo-cmp {
     font-size: 8.5pt;
@@ -268,38 +270,51 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
   }
   table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-top: 10px;
-    font-size: 10pt;
+    font-size: 8.5pt;
   }
   th {
     background: #f0f0f0;
-    padding: 6px 8px;
+    padding: 5px 4px;
     border: 1px solid #ccc;
     text-align: left;
-    font-size: 9.5pt;
+    font-size: 8pt;
+    overflow-wrap: break-word;
   }
   td {
-    padding: 5px 8px;
+    padding: 4px 4px;
     border-bottom: 1px solid #ddd;
     text-align: left;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
+  th:nth-child(1), td:nth-child(1) { width: 9%; }
+  th:nth-child(2), td:nth-child(2) { width: 21%; }
+  th:nth-child(3), td:nth-child(3) { width: 9%; }
+  th:nth-child(4), td:nth-child(4) { width: 11%; }
+  th:nth-child(5), td:nth-child(5) { width: 8%; }
+  th:nth-child(6), td:nth-child(6) { width: 7%; }
+  th:nth-child(7), td:nth-child(7) { width: 12%; }
+  th:nth-child(8), td:nth-child(8) { width: 9%; }
+  th:nth-child(9), td:nth-child(9) { width: 14%; }
   .num { text-align: right; }
   .iva-desglose {
     font-size: 9pt;
     margin-bottom: 10px;
   }
   .iva-linea {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
+    text-align: right;
     line-height: 1.6;
   }
   .iva-linea span:first-child {
+    display: inline-block;
     text-align: right;
     min-width: 180px;
   }
   .iva-linea span:last-child {
+    display: inline-block;
     min-width: 100px;
     text-align: right;
   }
@@ -315,11 +330,14 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
   .pie {
     font-size: 8.5pt;
     color: #555;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    display: table;
+    width: 100%;
     border-top: 1px solid #ccc;
     padding-top: 8px;
+  }
+  .pie > div {
+    display: table-cell;
+    vertical-align: top;
   }
   .pie .qr-img { width: 80px; height: 80px; }
   .no-print { display: block; }
