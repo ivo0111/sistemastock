@@ -36,6 +36,11 @@ salteate este paso.
    Si te muestra una version, esta todo bien. Si te dice "no se reconoce el
    comando", reinstala y asegurate de no destildar "Add PostgreSQL to PATH"
    (en instalaciones recientes esto es automatico).
+   Si esto último tampoco funciona, debe abrir las variables de entorno del sistema (buscar en opciones)
+   esto mostrará un panel con varias opciones, hacer click en "Variables de entorno" (esquina inferior derecha).
+   Una vez ahí verá un panel donde scrollear, debe presionar en donde dice "Path".
+   Verá un cuadro con varias opciones, haga click en Nuevo y pegue la ruta a la carpeta bin de su instalación de postres,
+   por lo general tendrá la forma de "C:\Program Files\PostgreSQL\18\bin", el número puede variar según la versión de postgres instalada
 
 ---
 
