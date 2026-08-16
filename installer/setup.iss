@@ -9,7 +9,9 @@
 ;      PostgreSQL).
 ;   3) Llama a installer\postinstall.ps1, que hace el trabajo real:
 ;      verifica/instala Node.js, verifica PostgreSQL, genera el .env,
-;      corre npm install, migraciones, seed y build.
+;      corre npm install, migraciones, seed y build. Si algo falla, la
+;      ventana de PowerShell queda abierta esperando una tecla (no se
+;      cierra sola) y además queda un log en installer\install-log.txt.
 ;   4) Crea accesos directos a "Iniciar Sistema.bat".
 ;
 ; Cómo compilarlo: ver el paso a paso en la respuesta del chat.
@@ -17,7 +19,7 @@
 
 #define MyAppName "Sistema Stock"
 #define MyAppVersion "1.0.0"
-#define MyAppPublisher "Tu Empresa"
+#define MyAppPublisher "Ivo0111"
 #define MyAppExeName "Iniciar Sistema.bat"
 
 [Setup]
@@ -36,6 +38,7 @@ OutputBaseFilename=SistemaStock-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+ArchitecturesInstallIn64BitMode=x64
 ; IMPORTANTE: este instalador no está firmado digitalmente. Windows
 ; SmartScreen probablemente muestre una advertencia al ejecutarlo.
 ; Para producción, considerá un certificado de code signing (ver
@@ -69,7 +72,8 @@ Filename: "powershell.exe"; \
     Flags: waituntilterminated
 
 Filename: "{app}\{#MyAppExeName}"; Description: "Iniciar el sistema ahora"; \
-    Flags: postinstall skipifsilent nowait shellexec
+    Flags: postinstall skipifsilent nowait shellexec; \
+    Check: PostInstallSucceeded
 
 [Code]
 { ────────────────────────────────────────────────────────────
@@ -127,4 +131,9 @@ end;
 function GetPgPort(Param: string): string;
 begin
   Result := PgPage.Values[2];
+end;
+
+function PostInstallSucceeded: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\installer\.postinstall-ok'));
 end;

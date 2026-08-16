@@ -15,12 +15,29 @@
  */
 
 const { execSync } = require('child_process');
-const { existsSync } = require('fs');
+const { existsSync, readFileSync } = require('fs');
 const { join } = require('path');
 
 // Carga stock-ventas-backend/.env aunque este script se invoque directamente
 // (ej. desde "Iniciar Sistema.bat"), no solo a través de "npm run dev".
-require('dotenv').config();
+// Si dotenv no está disponible (node_modules no instalado aún), hace un
+// fallback leyendo el archivo .env manualmente.
+try {
+  require('dotenv').config();
+} catch {
+  const envPath = join(__dirname, '..', '.env');
+  if (existsSync(envPath)) {
+    const lines = readFileSync(envPath, 'utf-8').split('\n');
+    for (const line of lines) {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const val = match[2].trim().replace(/^["']|["']$/g, '');
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+}
 
 const DB_NAME = 'stock_ventas';
 const PG_SUPERUSER = process.env.PGUSER || 'postgres';

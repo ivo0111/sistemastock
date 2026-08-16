@@ -15,4 +15,4 @@ Thumbs.db
 *~
 .vscode/settings.json
 .idea/
-.wsb
+*.wsb

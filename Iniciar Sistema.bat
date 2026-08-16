@@ -10,6 +10,32 @@ echo ============================================
 echo.
 
 REM ────────────────────────────────────────────
+REM 0) Verificar que node_modules exista en el backend
+REM ────────────────────────────────────────────
+if not exist "stock-ventas-backend\node_modules" (
+    echo.
+    echo ERROR: No se encontro la carpeta "node_modules" en el backend.
+    echo Esto significa que "npm install" no se ejecuto correctamente.
+    echo.
+    echo --- Diagnostico ---
+    echo Directorio actual: %cd%
+    echo Buscando en:       %cd%\stock-ventas-backend\node_modules
+    echo.
+    echo Contenido de stock-ventas-backend\:
+    dir /b "stock-ventas-backend" 2>nul
+    echo.
+    echo --- Soluciones ---
+    echo - Si instalaste con el instalador, verifica que este archivo se
+    echo   ejecuto desde la carpeta de instalacion.
+    echo - Si corriste desde la carpeta del proyecto fuente, necesitas
+    echo   correr el instalador primero, o ejecutar "npm install" manualmente.
+    echo - Si el instalador fallo, revisa el log en installer\install-log.txt.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM ────────────────────────────────────────────
 REM 1) Verificar que PostgreSQL este corriendo
 REM    (reutiliza la misma logica que "npm run dev"
 REM    usa en desarrollo: scripts/ensure-postgres.js)

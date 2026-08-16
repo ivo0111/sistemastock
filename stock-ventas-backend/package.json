@@ -18,6 +18,15 @@
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "prisma",
+      "puppeteer"
+    ]
+  },
   "dependencies": {
     "@prisma/client": "^5.18.0",
     "bcrypt": "^5.1.1",
