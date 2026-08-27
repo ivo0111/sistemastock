@@ -67,7 +67,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 ; para que el usuario vea el progreso de npm install / migraciones, que
 ; puede tardar varios minutos.
 Filename: "powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\postinstall.ps1"" -AppDir ""{app}"" -PgUser ""{code:GetPgUser}"" -PgPassword ""{code:GetPgPassword}"" -PgPort ""{code:GetPgPort}"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\postinstall.ps1"" -AppDir ""{app}"" -PgUser ""{code:GetPgUser}"" -PgPassword ""{code:GetPgPassword}"" -PgPort ""{code:GetPgPort}"" -ArcaCondicionIva ""{code:GetArcaCondicionIva}"" -ArcaRazonSocial ""{code:GetArcaRazonSocial}"" -ArcaCuit ""{code:GetArcaCuit}"" -ArcaPuntoVenta ""{code:GetArcaPuntoVenta}"" -ArcaDomicilio ""{code:GetArcaDomicilio}"" -ArcaIngresosBrutos ""{code:GetArcaIngresosBrutos}"" -ArcaFechaInicio ""{code:GetArcaFechaInicio}"""; \
     StatusMsg: "Configurando el sistema (esto puede tardar varios minutos)..."; \
     Flags: waituntilterminated
 
@@ -83,6 +83,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Iniciar el sistema ahora"; \
   ──────────────────────────────────────────────────────────── }
 var
   PgPage: TInputQueryWizardPage;
+  ArcaPage: TInputQueryWizardPage;
 
 procedure InitializeWizard;
 begin
@@ -99,6 +100,23 @@ begin
 
   PgPage.Values[0] := 'postgres';
   PgPage.Values[2] := '5432';
+
+  ArcaPage := CreateInputQueryPage(PgPage.ID,
+    'Datos de la empresa (ARCA / AFIP)',
+    'Información fiscal para facturación electrónica',
+    'Completá los datos de tu empresa. Si usás modo "mock", estos valores se guardan ' +
+    'en el .env y podés editarlos después. El CUIT debe ser solo números sin guiones.');
+
+  ArcaPage.Add('Condición IVA (MONOTRIBUTO / RI / EXENTO):', False);
+  ArcaPage.Add('Razón social:', False);
+  ArcaPage.Add('CUIT (solo números):', False);
+  ArcaPage.Add('Punto de venta:', False);
+  ArcaPage.Add('Domicilio comercial:', False);
+  ArcaPage.Add('Ingresos brutos:', False);
+  ArcaPage.Add('Fecha inicio actividades (DD/MM/AAAA):', False);
+
+  ArcaPage.Values[0] := 'MONOTRIBUTO';
+  ArcaPage.Values[3] := '1';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -131,6 +149,41 @@ end;
 function GetPgPort(Param: string): string;
 begin
   Result := PgPage.Values[2];
+end;
+
+function GetArcaCondicionIva(Param: string): string;
+begin
+  Result := ArcaPage.Values[0];
+end;
+
+function GetArcaRazonSocial(Param: string): string;
+begin
+  Result := ArcaPage.Values[1];
+end;
+
+function GetArcaCuit(Param: string): string;
+begin
+  Result := ArcaPage.Values[2];
+end;
+
+function GetArcaPuntoVenta(Param: string): string;
+begin
+  Result := ArcaPage.Values[3];
+end;
+
+function GetArcaDomicilio(Param: string): string;
+begin
+  Result := ArcaPage.Values[4];
+end;
+
+function GetArcaIngresosBrutos(Param: string): string;
+begin
+  Result := ArcaPage.Values[5];
+end;
+
+function GetArcaFechaInicio(Param: string): string;
+begin
+  Result := ArcaPage.Values[6];
 end;
 
 function PostInstallSucceeded: Boolean;

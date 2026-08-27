@@ -6,7 +6,9 @@
     instalador) para debug:
 
         powershell -ExecutionPolicy Bypass -File postinstall.ps1 `
-            -AppDir "C:\SistemaStock" -PgUser postgres -PgPassword "miclave" -PgPort 5432
+            -AppDir "C:\SistemaStock" -PgUser postgres -PgPassword "miclave" -PgPort 5432 `
+            -ArcaCondicionIva MONOTRIBUTO -ArcaRazonSocial "Mi Empresa" -ArcaCuit "20123456789" `
+            -ArcaPuntoVenta 1 -ArcaDomicilio "Calle 123" -ArcaIngresosBrutos "1234" -ArcaFechaInicio "01/01/2020"
 
     Códigos de salida (Inno Setup los interpreta después de correr esto):
         0  → todo OK
@@ -27,7 +29,14 @@ param(
     [Parameter(Mandatory = $true)][string]$AppDir,
     [Parameter(Mandatory = $true)][string]$PgUser,
     [Parameter(Mandatory = $true)][string]$PgPassword,
-    [Parameter(Mandatory = $true)][string]$PgPort
+    [Parameter(Mandatory = $true)][string]$PgPort,
+    [string]$ArcaCondicionIva = 'MONOTRIBUTO',
+    [string]$ArcaRazonSocial = 'Mi Empresa',
+    [string]$ArcaCuit = '',
+    [string]$ArcaPuntoVenta = '1',
+    [string]$ArcaDomicilio = '',
+    [string]$ArcaIngresosBrutos = '',
+    [string]$ArcaFechaInicio = ''
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -205,13 +214,13 @@ JWT_EXPIRES_IN=8h
 
 # ARCA (facturación electrónica) — modo mock por default.
 ARCA_MODO=mock
-ARCA_CUIT_EMISOR=
-ARCA_RAZON_SOCIAL="Mi Empresa"
-ARCA_CONDICION_IVA_EMISOR=MONOTRIBUTO
-ARCA_PUNTO_VENTA=1
-ARCA_DOMICILIO_COMERCIAL=
-ARCA_INGRESOS_BRUTOS=
-ARCA_FECHA_INICIO_ACTIVIDADES=
+ARCA_CUIT_EMISOR=$ArcaCuit
+ARCA_RAZON_SOCIAL="$ArcaRazonSocial"
+ARCA_CONDICION_IVA_EMISOR=$ArcaCondicionIva
+ARCA_PUNTO_VENTA=$ArcaPuntoVenta
+ARCA_DOMICILIO_COMERCIAL="$ArcaDomicilio"
+ARCA_INGRESOS_BRUTOS=$ArcaIngresosBrutos
+ARCA_FECHA_INICIO_ACTIVIDADES=$ArcaFechaInicio
 ARCA_CERT_PATH=
 ARCA_KEY_PATH=
 "@ | Set-Content -Path $envPath -Encoding UTF8
