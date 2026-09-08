@@ -75,6 +75,9 @@ export default function ProductosList() {
               Imprimir etiquetas{seleccionados.length > 0 ? ` (${seleccionados.length})` : ''}
             </button>
             {isAdmin && (
+              <Link to="/productos/importar" className="btn btn-outline">Importar desde Excel</Link>
+            )}
+            {isAdmin && (
               <Link to="/productos/nuevo" className="btn btn-primary">+ Nuevo Producto</Link>
             )}
           </div>

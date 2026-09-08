@@ -73,6 +73,24 @@ router.get(
   })
 );
 
+// ─────────────────────────────────────────────
+// Verificar existencia de SKUs / Códigos de Barras
+// ─────────────────────────────────────────────
+
+const verificarExistenciaSchema = z.object({
+  skus: z.array(z.string()).default([]),
+  codigosBarras: z.array(z.string()).default([]),
+});
+
+router.post(
+  "/verificar-existencia",
+  asyncHandler(async (req, res) => {
+    const { skus, codigosBarras } = verificarExistenciaSchema.parse(req.body);
+    const resultado = await service.verificarExistencia(skus, codigosBarras);
+    res.json(resultado);
+  })
+);
+
 // Alícuotas de IVA vigentes en Argentina que puede tener un producto.
 const ALICUOTAS_IVA_VALIDAS = [21, 10.5, 27, 5, 2.5, 0] as const;
 
@@ -151,6 +169,40 @@ router.post(
       req.auth!.id
     );
     res.json(producto);
+  })
+);
+
+// ─────────────────────────────────────────────
+// Importación masiva de productos
+// ─────────────────────────────────────────────
+
+const filaImportacionSchema = z.object({
+  sku: z.string().min(1),
+  nombre: z.string().min(1),
+  categoriaNombre: z.string().optional(),
+  precioCosto: z.number().nonnegative(),
+  precioVenta: z.number().nonnegative(),
+  stockActual: z.number().int().nonnegative().optional(),
+  stockMinimo: z.number().int().nonnegative().optional(),
+  codigoBarras: z.string().optional(),
+  alicuotaIva: z.number().refine((v) => ALICUOTAS_IVA_VALIDAS.includes(v as any), {
+    message: "La alícuota de IVA debe ser una de: 21, 10.5, 27, 5, 2.5, 0",
+  }).optional(),
+  unidadMedida: z.string().min(1).optional(),
+  accionSiExiste: z.enum(["actualizar", "omitir"]).optional(),
+});
+
+const importarSchema = z.object({
+  filas: z.array(filaImportacionSchema).min(1, "Debe enviar al menos una fila").max(500, "Máximo 500 filas por importación"),
+});
+
+router.post(
+  "/importar",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { filas } = importarSchema.parse(req.body);
+    const resultado = await service.importarProductos(filas, req.auth!.id);
+    res.json(resultado);
   })
 );
 

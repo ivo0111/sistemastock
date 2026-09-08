@@ -19,6 +19,7 @@ import Clientes from './pages/clientes/Clientes'
 import Caja from './pages/caja/Caja'
 import Reportes from './pages/reportes/Reportes'
 import EtiquetasImprimibles from './pages/productos/EtiquetasImprimibles'
+import ImportarProductos from './pages/productos/ImportarProductos'
 
 export default function App() {
   return (
@@ -55,6 +56,14 @@ export default function App() {
           element={
             <ProtectedRoute adminOnly>
               <ProductoForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="productos/importar"
+          element={
+            <ProtectedRoute adminOnly>
+              <ImportarProductos />
             </ProtectedRoute>
           }
         />

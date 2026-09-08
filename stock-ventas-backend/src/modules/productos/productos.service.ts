@@ -186,3 +186,152 @@ export async function ajustarStock(
   });
 }
 
+// ─────────────────────────────────────────────
+// Importación masiva de productos
+// ─────────────────────────────────────────────
+
+export interface FilaImportacion {
+  sku: string;
+  nombre: string;
+  categoriaNombre?: string;
+  precioCosto: number;
+  precioVenta: number;
+  stockActual?: number;
+  stockMinimo?: number;
+  codigoBarras?: string;
+  alicuotaIva?: number;
+  unidadMedida?: string;
+  accionSiExiste?: "actualizar" | "omitir";
+}
+
+export interface ResultadoImportacion {
+  creados: number;
+  actualizados: number;
+  omitidos: number;
+  errores: Array<{ sku: string; motivo: string }>;
+}
+
+export async function verificarExistencia(skus: string[], codigosBarras: string[]) {
+  const skusExistentes = await prisma.producto.findMany({
+    where: { sku: { in: skus } },
+    select: { sku: true },
+  });
+  const codigosExistentes = await prisma.producto.findMany({
+    where: { codigoBarras: { in: codigosBarras.filter(Boolean) } },
+    select: { codigoBarras: true },
+  });
+  return {
+    skusExistentes: skusExistentes.map((p) => p.sku),
+    codigosExistentes: codigosExistentes.map((p) => p.codigoBarras!),
+  };
+}
+
+export async function importarProductos(
+  filas: FilaImportacion[],
+  usuarioId: number
+): Promise<ResultadoImportacion> {
+  const resultado: ResultadoImportacion = { creados: 0, actualizados: 0, omitidos: 0, errores: [] };
+
+  // 1. Recopilar categorías únicas para upsert
+  const categoriasUnicas = [...new Set(filas.map((f) => f.categoriaNombre).filter(Boolean))] as string[];
+
+  // 2. Ejecutar todo dentro de una transacción principal
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // 2a. Upsert de categorías
+    const mapaCategorias = new Map<string, number>();
+    for (const nombre of categoriasUnicas) {
+      const existente = await tx.categoria.findUnique({ where: { nombre } });
+      if (existente) {
+        mapaCategorias.set(nombre, existente.id);
+      } else {
+        const creada = await tx.categoria.create({ data: { nombre } });
+        mapaCategorias.set(nombre, creada.id);
+      }
+    }
+
+    // 2b. Procesar cada fila individualmente
+    for (const fila of filas) {
+      try {
+        const productoExistente = await tx.producto.findUnique({ where: { sku: fila.sku } });
+
+        if (!productoExistente) {
+          // SKU no existe → crear
+          const nuevoProducto = await tx.producto.create({
+            data: {
+              sku: fila.sku,
+              nombre: fila.nombre,
+              categoriaId: fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null,
+              precioCosto: fila.precioCosto,
+              precioVenta: fila.precioVenta,
+              stockActual: fila.stockActual ?? 0,
+              stockMinimo: fila.stockMinimo ?? 0,
+              codigoBarras: fila.codigoBarras || null,
+              alicuotaIva: fila.alicuotaIva ?? 21,
+              unidadMedida: fila.unidadMedida ?? "unidades",
+            },
+          });
+
+          // Registrar movimiento de stock inicial si aplica
+          if ((fila.stockActual ?? 0) > 0) {
+            await tx.movimientoStock.create({
+              data: {
+                productoId: nuevoProducto.id,
+                tipo: TipoMovimientoStock.AJUSTE_INICIAL,
+                cantidad: fila.stockActual!,
+                usuarioId,
+              },
+            });
+          }
+
+          resultado.creados++;
+        } else if (fila.accionSiExiste === "actualizar") {
+          // SKU existe + "actualizar" → actualizar solo campos con valor definido
+          const dataActualizar: Record<string, any> = {};
+
+          if (fila.nombre !== undefined) dataActualizar.nombre = fila.nombre;
+          if (fila.categoriaNombre !== undefined) {
+            const catId = fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null;
+            dataActualizar.categoria = catId ? { connect: { id: catId } } : { disconnect: true };
+          }
+          if (fila.precioCosto !== undefined) dataActualizar.precioCosto = fila.precioCosto;
+          if (fila.precioVenta !== undefined) dataActualizar.precioVenta = fila.precioVenta;
+          if (fila.stockMinimo !== undefined) dataActualizar.stockMinimo = fila.stockMinimo;
+          if (fila.codigoBarras !== undefined) dataActualizar.codigoBarras = fila.codigoBarras || null;
+          if (fila.alicuotaIva !== undefined) dataActualizar.alicuotaIva = fila.alicuotaIva;
+          if (fila.unidadMedida !== undefined) dataActualizar.unidadMedida = fila.unidadMedida;
+
+          await tx.producto.update({
+            where: { id: productoExistente.id },
+            data: dataActualizar,
+          });
+
+          // Si se actualizó stockActual, registrar movimiento
+          if (fila.stockActual !== undefined && fila.stockActual !== productoExistente.stockActual) {
+            const diff = fila.stockActual - productoExistente.stockActual;
+            await tx.movimientoStock.create({
+              data: {
+                productoId: productoExistente.id,
+                tipo: TipoMovimientoStock.AJUSTE,
+                cantidad: diff,
+                usuarioId,
+                motivo: "Importación masiva - ajuste de stock",
+              },
+            });
+          }
+
+          resultado.actualizados++;
+        } else {
+          // SKU existe + "omitir" (o no definido) → contar como omitido
+          resultado.omitidos++;
+        }
+      } catch (err: any) {
+        // Error parcial en una fila: capturar y continuar
+        const motivo = err?.message ?? "Error desconocido al procesar la fila";
+        resultado.errores.push({ sku: fila.sku, motivo });
+      }
+    }
+  });
+
+  return resultado;
+}
+

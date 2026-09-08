@@ -41,6 +41,11 @@ export default function Layout() {
               Categorías
             </NavLink>
           )}
+          {isAdmin && (
+            <NavLink to="/productos/importar" className="sidebar-link">
+              Importar Productos
+            </NavLink>
+          )}
 
           <div className="sidebar-section">Stock</div>
           <NavLink to="/stock/movimientos" className="sidebar-link">
