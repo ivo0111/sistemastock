@@ -161,14 +161,28 @@ export async function ajustarStock(
   motivo: string,
   usuarioId: number
 ) {
-  const producto = await obtenerProducto(productoId);
-
-  const nuevoStock = producto.stockActual + cantidad;
-  if (nuevoStock < 0) {
-    throw new AppError("STOCK_INSUFICIENTE", "El ajuste dejaría el stock en negativo", 409);
-  }
-
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // SELECT ... FOR UPDATE bloquea la fila del producto hasta que termine la
+    // transacción: nadie puede vender ni ajustar el mismo producto en el medio,
+    // así la validación de stock se hace sobre el valor final que se actualiza.
+    const filas = await tx.$queryRaw<{ id: number; stock_actual: number; nombre: string }[]>`
+      SELECT id, stock_actual, nombre FROM productos WHERE id = ${productoId} FOR UPDATE
+    `;
+
+    if (filas.length === 0) {
+      throw new AppError("PRODUCTO_NO_ENCONTRADO", "El producto no existe", 404);
+    }
+
+    const stockActual = Number(filas[0].stock_actual);
+    const nuevoStock = stockActual + cantidad;
+    if (nuevoStock < 0) {
+      throw new AppError(
+        "STOCK_INSUFICIENTE",
+        `El ajuste dejaría el stock en negativo (disponible: ${stockActual}, ajuste: ${cantidad})`,
+        409
+      );
+    }
+
     await tx.movimientoStock.create({
       data: {
         productoId,
@@ -179,9 +193,11 @@ export async function ajustarStock(
       },
     });
 
+    // Incremento atómico en lugar de escribir un valor absoluto: aunque otra
+    // transacción hubiera modificado el stock, nunca se pisa, se suma/resta.
     return tx.producto.update({
       where: { id: productoId },
-      data: { stockActual: nuevoStock },
+      data: { stockActual: { increment: cantidad } },
     });
   });
 }
@@ -226,111 +242,215 @@ export async function verificarExistencia(skus: string[], codigosBarras: string[
   };
 }
 
+const LOTE_IMPORTACION = 50;
+const TIMEOUT_LOTE_MS = 15000;
+const TIMEOUT_FILA_MS = 10000;
+
+type AccionFila = "creado" | "actualizado" | "omitido";
+
+async function procesarFila(
+  tx: Prisma.TransactionClient,
+  fila: FilaImportacion,
+  mapaCategorias: Map<string, number>,
+  usuarioId: number
+): Promise<AccionFila> {
+  const productoExistente = await tx.producto.findUnique({ where: { sku: fila.sku } });
+
+  if (!productoExistente) {
+    // SKU no existe → crear
+    const nuevoProducto = await tx.producto.create({
+      data: {
+        sku: fila.sku,
+        nombre: fila.nombre,
+        categoriaId: fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null,
+        precioCosto: fila.precioCosto,
+        precioVenta: fila.precioVenta,
+        stockActual: fila.stockActual ?? 0,
+        stockMinimo: fila.stockMinimo ?? 0,
+        codigoBarras: fila.codigoBarras || null,
+        alicuotaIva: fila.alicuotaIva ?? 21,
+        unidadMedida: fila.unidadMedida ?? "unidades",
+      },
+    });
+
+    // Registrar movimiento de stock inicial si aplica
+    if ((fila.stockActual ?? 0) > 0) {
+      await tx.movimientoStock.create({
+        data: {
+          productoId: nuevoProducto.id,
+          tipo: TipoMovimientoStock.AJUSTE_INICIAL,
+          cantidad: fila.stockActual!,
+          usuarioId,
+        },
+      });
+    }
+
+    return "creado";
+  }
+
+  if (fila.accionSiExiste !== "actualizar") {
+    // SKU existe + "omitir" (o no definido) → contar como omitido
+    return "omitido";
+  }
+
+  // SKU existe + "actualizar" → actualizar solo campos con valor definido
+  const dataActualizar: Record<string, any> = {};
+
+  if (fila.nombre !== undefined) dataActualizar.nombre = fila.nombre;
+  if (fila.categoriaNombre !== undefined) {
+    const catId = fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null;
+    dataActualizar.categoria = catId ? { connect: { id: catId } } : { disconnect: true };
+  }
+  if (fila.precioCosto !== undefined) dataActualizar.precioCosto = fila.precioCosto;
+  if (fila.precioVenta !== undefined) dataActualizar.precioVenta = fila.precioVenta;
+  if (fila.stockMinimo !== undefined) dataActualizar.stockMinimo = fila.stockMinimo;
+  if (fila.codigoBarras !== undefined) dataActualizar.codigoBarras = fila.codigoBarras || null;
+  if (fila.alicuotaIva !== undefined) dataActualizar.alicuotaIva = fila.alicuotaIva;
+  if (fila.unidadMedida !== undefined) dataActualizar.unidadMedida = fila.unidadMedida;
+
+  if (fila.stockActual !== undefined) {
+    // El CSV trae el stock "objetivo": se bloquea la fila, se calcula la
+    // diferencia contra el stock vigente y se aplica con increment para
+    // no pisar ventas/ajustes concurrentes ni desfasar la auditoría.
+    const stockRows = await tx.$queryRaw<{ stock_actual: number }[]>`
+      SELECT stock_actual FROM productos WHERE id = ${productoExistente.id} FOR UPDATE
+    `;
+    const stockActual = Number(stockRows[0].stock_actual);
+    const diff = fila.stockActual - stockActual;
+
+    if (diff !== 0) {
+      dataActualizar.stockActual = { increment: diff };
+      await tx.movimientoStock.create({
+        data: {
+          productoId: productoExistente.id,
+          tipo: TipoMovimientoStock.AJUSTE,
+          cantidad: diff,
+          usuarioId,
+          motivo: "Importación masiva - ajuste de stock",
+        },
+      });
+    }
+  }
+
+  await tx.producto.update({
+    where: { id: productoExistente.id },
+    data: dataActualizar,
+  });
+
+  return "actualizado";
+}
+
+function contarResultado(resultado: ResultadoImportacion, accion: AccionFila) {
+  if (accion === "creado") resultado.creados++;
+  else if (accion === "actualizado") resultado.actualizados++;
+  else resultado.omitidos++;
+}
+
 export async function importarProductos(
   filas: FilaImportacion[],
   usuarioId: number
 ): Promise<ResultadoImportacion> {
   const resultado: ResultadoImportacion = { creados: 0, actualizados: 0, omitidos: 0, errores: [] };
 
-  // 1. Recopilar categorías únicas para upsert
-  const categoriasUnicas = [...new Set(filas.map((f) => f.categoriaNombre).filter(Boolean))] as string[];
+  // 1. Validación previa: SKUs y códigos de barras duplicados dentro del archivo
+  const skusVistos = new Set<string>();
+  const codigosVistos = new Set<string>();
+  const filasValidas: FilaImportacion[] = [];
 
-  // 2. Ejecutar todo dentro de una transacción principal
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // 2a. Upsert de categorías
-    const mapaCategorias = new Map<string, number>();
-    for (const nombre of categoriasUnicas) {
-      const existente = await tx.categoria.findUnique({ where: { nombre } });
-      if (existente) {
-        mapaCategorias.set(nombre, existente.id);
-      } else {
-        const creada = await tx.categoria.create({ data: { nombre } });
-        mapaCategorias.set(nombre, creada.id);
+  for (const fila of filas) {
+    if (skusVistos.has(fila.sku)) {
+      resultado.errores.push({ sku: fila.sku, motivo: "SKU duplicado dentro del archivo" });
+      continue;
+    }
+    skusVistos.add(fila.sku);
+
+    const codigo = fila.codigoBarras?.trim();
+    if (codigo) {
+      if (codigosVistos.has(codigo)) {
+        resultado.errores.push({
+          sku: fila.sku,
+          motivo: `Código de barras "${codigo}" duplicado dentro del archivo`,
+        });
+        continue;
       }
+      codigosVistos.add(codigo);
     }
 
-    // 2b. Procesar cada fila individualmente
-    for (const fila of filas) {
-      try {
-        const productoExistente = await tx.producto.findUnique({ where: { sku: fila.sku } });
+    filasValidas.push(fila);
+  }
 
-        if (!productoExistente) {
-          // SKU no existe → crear
-          const nuevoProducto = await tx.producto.create({
-            data: {
-              sku: fila.sku,
-              nombre: fila.nombre,
-              categoriaId: fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null,
-              precioCosto: fila.precioCosto,
-              precioVenta: fila.precioVenta,
-              stockActual: fila.stockActual ?? 0,
-              stockMinimo: fila.stockMinimo ?? 0,
-              codigoBarras: fila.codigoBarras || null,
-              alicuotaIva: fila.alicuotaIva ?? 21,
-              unidadMedida: fila.unidadMedida ?? "unidades",
-            },
+  // 2. Validación previa: códigos de barras ya asignados a otro producto en BD
+  let filasProcesables = filasValidas;
+  if (codigosVistos.size > 0) {
+    const existentes = await prisma.producto.findMany({
+      where: { codigoBarras: { in: [...codigosVistos] } },
+      select: { sku: true, codigoBarras: true },
+    });
+    const skuPorCodigo = new Map(existentes.map((p) => [p.codigoBarras!, p.sku]));
+
+    filasProcesables = [];
+    for (const fila of filasValidas) {
+      const codigo = fila.codigoBarras?.trim();
+      const skuPropietario = codigo ? skuPorCodigo.get(codigo) : undefined;
+      if (skuPropietario && skuPropietario !== fila.sku) {
+        resultado.errores.push({
+          sku: fila.sku,
+          motivo: `Código de barras "${codigo}" ya pertenece al producto ${skuPropietario}`,
+        });
+        continue;
+      }
+      filasProcesables.push(fila);
+    }
+  }
+
+  // 3. Upsert de categorías (una sola pasada, fuera de los lotes)
+  const mapaCategorias = new Map<string, number>();
+  const categoriasUnicas = [...new Set(filasProcesables.map((f) => f.categoriaNombre).filter(Boolean))] as string[];
+  for (const nombre of categoriasUnicas) {
+    const categoria = await prisma.categoria.upsert({
+      where: { nombre },
+      update: {},
+      create: { nombre },
+    });
+    mapaCategorias.set(nombre, categoria.id);
+  }
+
+  // 4. Procesar en lotes con timeout explícito; si un lote falla, se reintenta
+  //    fila por fila para aislar la fila problemática (en Postgres, un error
+  //    aborta la transacción entera, por eso el fallback).
+  for (let i = 0; i < filasProcesables.length; i += LOTE_IMPORTACION) {
+    const lote = filasProcesables.slice(i, i + LOTE_IMPORTACION);
+
+    try {
+      const acciones: AccionFila[] = [];
+      await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          for (const fila of lote) {
+            acciones.push(await procesarFila(tx, fila, mapaCategorias, usuarioId));
+          }
+        },
+        { maxWait: 5000, timeout: TIMEOUT_LOTE_MS }
+      );
+      // Contar solo lo que realmente se consolidó (commit OK)
+      acciones.forEach((accion) => contarResultado(resultado, accion));
+    } catch {
+      // Reintentar fila por fila para aislar la fila que rompió el lote
+      for (const fila of lote) {
+        try {
+          const accion = await prisma.$transaction(
+            (tx: Prisma.TransactionClient) => procesarFila(tx, fila, mapaCategorias, usuarioId),
+            { maxWait: 2000, timeout: TIMEOUT_FILA_MS }
+          );
+          contarResultado(resultado, accion);
+        } catch (err: any) {
+          resultado.errores.push({
+            sku: fila.sku,
+            motivo: err?.message ?? "Error desconocido al procesar la fila",
           });
-
-          // Registrar movimiento de stock inicial si aplica
-          if ((fila.stockActual ?? 0) > 0) {
-            await tx.movimientoStock.create({
-              data: {
-                productoId: nuevoProducto.id,
-                tipo: TipoMovimientoStock.AJUSTE_INICIAL,
-                cantidad: fila.stockActual!,
-                usuarioId,
-              },
-            });
-          }
-
-          resultado.creados++;
-        } else if (fila.accionSiExiste === "actualizar") {
-          // SKU existe + "actualizar" → actualizar solo campos con valor definido
-          const dataActualizar: Record<string, any> = {};
-
-          if (fila.nombre !== undefined) dataActualizar.nombre = fila.nombre;
-          if (fila.categoriaNombre !== undefined) {
-            const catId = fila.categoriaNombre ? mapaCategorias.get(fila.categoriaNombre) ?? null : null;
-            dataActualizar.categoria = catId ? { connect: { id: catId } } : { disconnect: true };
-          }
-          if (fila.precioCosto !== undefined) dataActualizar.precioCosto = fila.precioCosto;
-          if (fila.precioVenta !== undefined) dataActualizar.precioVenta = fila.precioVenta;
-          if (fila.stockMinimo !== undefined) dataActualizar.stockMinimo = fila.stockMinimo;
-          if (fila.codigoBarras !== undefined) dataActualizar.codigoBarras = fila.codigoBarras || null;
-          if (fila.alicuotaIva !== undefined) dataActualizar.alicuotaIva = fila.alicuotaIva;
-          if (fila.unidadMedida !== undefined) dataActualizar.unidadMedida = fila.unidadMedida;
-
-          await tx.producto.update({
-            where: { id: productoExistente.id },
-            data: dataActualizar,
-          });
-
-          // Si se actualizó stockActual, registrar movimiento
-          if (fila.stockActual !== undefined && fila.stockActual !== productoExistente.stockActual) {
-            const diff = fila.stockActual - productoExistente.stockActual;
-            await tx.movimientoStock.create({
-              data: {
-                productoId: productoExistente.id,
-                tipo: TipoMovimientoStock.AJUSTE,
-                cantidad: diff,
-                usuarioId,
-                motivo: "Importación masiva - ajuste de stock",
-              },
-            });
-          }
-
-          resultado.actualizados++;
-        } else {
-          // SKU existe + "omitir" (o no definido) → contar como omitido
-          resultado.omitidos++;
         }
-      } catch (err: any) {
-        // Error parcial en una fila: capturar y continuar
-        const motivo = err?.message ?? "Error desconocido al procesar la fila";
-        resultado.errores.push({ sku: fila.sku, motivo });
       }
     }
-  });
+  }
 
   return resultado;
 }

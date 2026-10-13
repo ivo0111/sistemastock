@@ -143,7 +143,6 @@ export default function POS() {
         items: cart.map(item => ({
           productoId: item.productoId,
           cantidad: item.cantidad,
-          precioUnitario: item.precioUnitario,
           bonificacion: item.bonificacion,
         })),
         formaPago: formaPago.toUpperCase(),

@@ -18,7 +18,6 @@ const crearVentaSchema = z.object({
       z.object({
         productoId: z.number(),
         cantidad: z.number().int().positive(),
-        precioUnitario: z.number().nonnegative(),
         bonificacion: z.number().min(0).max(100).optional(),
       })
     )

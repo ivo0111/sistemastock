@@ -16,7 +16,7 @@ import stockRoutes from "./modules/stock/stock.routes";
 export const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/v1/health", (req, res) => res.json({ status: "ok" }));
 
