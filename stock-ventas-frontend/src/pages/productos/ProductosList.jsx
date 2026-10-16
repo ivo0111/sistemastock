@@ -14,7 +14,7 @@ export default function ProductosList() {
   const [loading, setLoading] = useState(true)
   const [seleccionados, setSeleccionados] = useState([])
   const limit = 20
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
+  const isAdmin = user?.rol === 'admin'
 
   const load = useCallback(async () => {
     setLoading(true)

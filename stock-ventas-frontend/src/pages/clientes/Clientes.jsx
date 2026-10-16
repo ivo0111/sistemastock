@@ -15,7 +15,7 @@ const INITIAL_AJUSTE = { monto: '', motivo: '', tipo: 'CARGO' }
 
 export default function Clientes() {
   const { user } = useAuth()
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño' || user?.rol === 'dueno'
+  const isAdmin = user?.rol === 'admin'
 
   const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)

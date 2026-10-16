@@ -28,7 +28,9 @@ async function request(endpoint, options = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers })
-  if (res.status === 401) {
+  // 401 en /auth/login significa "credenciales incorrectas", no sesión vencida:
+  // se maneja como cualquier otro error para que el form muestre el mensaje del backend.
+  if (res.status === 401 && !endpoint.startsWith('/auth/login')) {
     clearSession()
     if (window.location.pathname !== '/login') {
       window.location.href = '/login'

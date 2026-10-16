@@ -6,7 +6,7 @@ const POLL_INTERVAL = 180000 // 3 minutos
 export function useStockBajo(user) {
   const [stockBajo, setStockBajo] = useState([])
 
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
+  const isAdmin = user?.rol === 'admin'
 
   useEffect(() => {
     if (!isAdmin) return

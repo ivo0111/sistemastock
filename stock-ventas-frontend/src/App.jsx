@@ -88,8 +88,22 @@ export default function App() {
         <Route path="ventas" element={<VentasList />} />
         <Route path="ventas/:id" element={<VentaDetalle />} />
         <Route path="proveedores" element={<Proveedores />} />
-        <Route path="compras" element={<ComprasList />} />
-        <Route path="compras/:id" element={<CompraDetalle />} />
+        <Route
+          path="compras"
+          element={
+            <ProtectedRoute adminOnly>
+              <ComprasList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="compras/:id"
+          element={
+            <ProtectedRoute adminOnly>
+              <CompraDetalle />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="compras/nueva"
           element={

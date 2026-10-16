@@ -66,7 +66,8 @@ export default function ProductoForm() {
         alicuotaIva: Number(form.alicuotaIva),
         unidadMedida: form.unidadMedida,
       }
-      if (form.codigoBarras) body.codigoBarras = form.codigoBarras
+      // En edición se envía siempre: vacío => borrar el código de barras en el backend
+      if (form.codigoBarras || isEdit) body.codigoBarras = form.codigoBarras
       if (!isEdit) body.stockInicial = Number(form.stockInicial)
       if (isEdit) {
         await put(`/productos/${id}`, body)

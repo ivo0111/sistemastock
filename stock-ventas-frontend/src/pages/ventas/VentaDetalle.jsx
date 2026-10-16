@@ -14,7 +14,7 @@ export default function VentaDetalle() {
   const [error, setError] = useState('')
   const [copias, setCopias] = useState('1')
   const [descargandoPdf, setDescargandoPdf] = useState(false)
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
+  const isAdmin = user?.rol === 'admin'
 
   useEffect(() => {
     get(`/ventas/${id}`)
@@ -64,6 +64,10 @@ export default function VentaDetalle() {
               try {
                 const html = await getHtml(`/ventas/${venta.id}/comprobante?copias=${copias}`)
                 const win = window.open('', '_blank')
+                if (!win) {
+                  setError('El navegador bloqueó la ventana emergente. Permití las ventanas emergentes para ver el comprobante.')
+                  return
+                }
                 win.document.write(html)
                 win.document.close()
               } catch (err) {

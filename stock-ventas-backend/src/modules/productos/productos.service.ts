@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import { TipoMovimientoStock, Prisma, Producto } from "@prisma/client";
+import { TipoMovimientoStock, Prisma } from "@prisma/client";
 
 interface ListarParams {
   busqueda?: string;
@@ -23,6 +23,17 @@ export async function listarProductos(params: ListarParams) {
   }
   if (categoriaId) where.categoriaId = categoriaId;
 
+  // stockActual <= stockMinimo compara dos columnas entre sí, algo que Prisma
+  // no soporta en `where`: se resuelve con SQL crudo. Los ids se usan como
+  // filtro ANTES de paginar, así total y páginas quedan consistentes.
+  if (stockBajo) {
+    const bajos = await prisma.$queryRaw<{ id: number }[]>`
+      SELECT id FROM productos
+      WHERE activo = true AND stock_actual <= stock_minimo
+    `;
+    where.id = { in: bajos.map((p) => p.id) };
+  }
+
   const [data, total] = await Promise.all([
     prisma.producto.findMany({
       where,
@@ -34,11 +45,7 @@ export async function listarProductos(params: ListarParams) {
     prisma.producto.count({ where }),
   ]);
 
-  // stockBajo se filtra en memoria porque compara dos columnas entre sí
-  // (Prisma no soporta comparar column vs column directamente en `where`)
-  const filtered = stockBajo ? data.filter((p: Producto) => p.stockActual <= p.stockMinimo) : data;
-
-  return { data: filtered, total, page, limit };
+  return { data, total, page, limit };
 }
 
 export async function buscarProductosRapido(query: string) {
@@ -127,7 +134,7 @@ export async function crearProducto(input: CrearProductoInput) {
 
 interface ActualizarProductoInput {
   nombre?: string;
-  codigoBarras?: string;
+  codigoBarras?: string | null;
   categoriaId?: number;
   precioCosto?: number;
   precioVenta?: number;
@@ -139,14 +146,22 @@ interface ActualizarProductoInput {
 export async function actualizarProducto(id: number, input: ActualizarProductoInput) {
   await obtenerProducto(id); // valida que exista
 
-  if (input.codigoBarras) {
+  // "" o solo espacios => borrar el código de barras (null). undefined => no se toca.
+  const codigoBarras =
+    input.codigoBarras === null
+      ? null
+      : typeof input.codigoBarras === "string"
+        ? input.codigoBarras.trim() || null
+        : undefined;
+
+  if (codigoBarras) {
     const existeCB = await prisma.producto.findFirst({
-      where: { codigoBarras: input.codigoBarras, id: { not: id } },
+      where: { codigoBarras, id: { not: id } },
     });
     if (existeCB) throw new AppError("CODIGO_BARRAS_DUPLICADO", "Ya existe otro producto con ese código de barras", 409);
   }
 
-  return prisma.producto.update({ where: { id }, data: { ...input, codigoBarras: input.codigoBarras ?? undefined } });
+  return prisma.producto.update({ where: { id }, data: { ...input, codigoBarras } });
 }
 
 export async function eliminarProducto(id: number) {

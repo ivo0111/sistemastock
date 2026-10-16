@@ -12,7 +12,7 @@ export default function Layout() {
     navigate('/login')
   }
 
-  const isAdmin = user?.rol === 'admin' || user?.rol === 'dueño'
+  const isAdmin = user?.rol === 'admin'
 
   return (
     <div className="layout">
@@ -57,14 +57,16 @@ export default function Layout() {
             </NavLink>
           )}
 
-          <div className="sidebar-section">Compras</div>
-          <NavLink to="/compras" className="sidebar-link">
-            Compras
-          </NavLink>
           {isAdmin && (
-            <NavLink to="/compras/nueva" className="sidebar-link">
-              Nueva Compra
-            </NavLink>
+            <>
+              <div className="sidebar-section">Compras</div>
+              <NavLink to="/compras" className="sidebar-link">
+                Compras
+              </NavLink>
+              <NavLink to="/compras/nueva" className="sidebar-link">
+                Nueva Compra
+              </NavLink>
+            </>
           )}
 
           <div className="sidebar-section">Otros</div>

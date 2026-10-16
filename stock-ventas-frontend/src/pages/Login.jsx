@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
@@ -10,10 +10,7 @@ export default function Login() {
   const { login, user } = useAuth()
   const navigate = useNavigate()
 
-  if (user) {
-    navigate('/', { replace: true })
-    return null
-  }
+  if (user) return <Navigate to="/" replace />
 
   async function handleSubmit(e) {
     e.preventDefault()

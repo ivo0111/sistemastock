@@ -43,7 +43,7 @@ router.get(
         desde: z.coerce.date().optional(),
         hasta: z.coerce.date().optional(),
         usuario_id: z.coerce.number().optional(),
-        estado: z.string().optional(),
+        estado: z.nativeEnum(EstadoVenta).optional(),
         page: z.coerce.number().min(1).optional(),
         limit: z.coerce.number().min(1).max(100).optional(),
       })
@@ -53,7 +53,7 @@ router.get(
       desde: query.desde,
       hasta: query.hasta,
       usuarioId: query.usuario_id,
-      estado: query.estado as EstadoVenta | undefined,
+      estado: query.estado,
       page: query.page,
       limit: query.limit,
     });

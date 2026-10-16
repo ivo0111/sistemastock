@@ -48,7 +48,12 @@ router.get(
       .object({
         busqueda: z.string().optional(),
         categoria_id: z.coerce.number().optional(),
-        stock_bajo: z.coerce.boolean().optional(),
+        // z.coerce.boolean() convierte cualquier string no vacío en true
+        // ("false" incluido): se parsea explícitamente.
+        stock_bajo: z
+          .enum(["true", "false", "1", "0"])
+          .optional()
+          .transform((v) => v === "true" || v === "1"),
         page: z.coerce.number().min(1).optional(),
         limit: z.coerce.number().min(1).max(100).optional(),
       })
@@ -122,7 +127,8 @@ router.post(
 
 const actualizarSchema = z.object({
   nombre: z.string().min(1).optional(),
-  codigoBarras: z.string().optional(),
+  // "" o null => borrar el código de barras; ausente => no se toca
+  codigoBarras: z.union([z.string(), z.null()]).optional(),
   categoriaId: z.number().optional(),
   precioCosto: z.number().nonnegative().optional(),
   precioVenta: z.number().nonnegative().optional(),
