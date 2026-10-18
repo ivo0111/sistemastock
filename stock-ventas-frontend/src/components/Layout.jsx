@@ -80,6 +80,11 @@ export default function Layout() {
             Caja
           </NavLink>
           {isAdmin && (
+            <NavLink to="/usuarios" className="sidebar-link">
+              Usuarios
+            </NavLink>
+          )}
+          {isAdmin && (
             <NavLink to="/reportes" className="sidebar-link">
               Reportes
               {count > 0 && <span className="sidebar-badge">{count}</span>}
@@ -89,6 +94,13 @@ export default function Layout() {
         <div className="sidebar-footer">
           <div style={{ fontWeight: 500, color: 'white' }}>{user?.nombre}</div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--gray-400)' }}>{user?.rol}</div>
+          <button
+            className="btn btn-sm btn-outline"
+            style={{ color: 'black', borderColor: 'var(--gray-600)', width: '100%', marginBottom: 8 }}
+            onClick={() => navigate('/cambiar-password')}
+          >
+            Cambiar contraseña
+          </button>
           <button className="btn btn-sm btn-outline" style={{ color: 'black', borderColor: 'var(--gray-600)', width: '100%' }} onClick={handleLogout}>
             Cerrar sesión
           </button>

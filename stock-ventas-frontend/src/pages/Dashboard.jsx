@@ -4,6 +4,12 @@ import { useAuth } from '../context/AuthContext'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStockBajo } from '../hooks/useStockBajo'
 
+// AAAA-MM-DD según la zona del negocio (UTC-3). toISOString() usa UTC y a las
+// 21:00 ya es "mañana": el backend interpreta desde/hasta como día local.
+function fechaLocal(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(d)
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -16,7 +22,7 @@ export default function Dashboard() {
     async function load() {
       try {
         const [ventasHoy, cajaActual] = await Promise.allSettled([
-          get('/reportes/ventas', { desde: new Date().toISOString().slice(0, 10), hasta: new Date(Date.now() + 86400000).toISOString().slice(0, 10) }),
+          get('/reportes/ventas', { desde: fechaLocal(), hasta: fechaLocal() }),
           get('/caja/actual'),
         ])
         if (ventasHoy.status === 'fulfilled') setStats(ventasHoy.value)

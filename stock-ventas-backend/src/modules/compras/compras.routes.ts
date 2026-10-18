@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { zFechaDesde, zFechaHasta } from "../../utils/fechas";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import * as service from "./compras.service";
 
@@ -40,8 +41,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const query = z
       .object({
-        desde: z.coerce.date().optional(),
-        hasta: z.coerce.date().optional(),
+        desde: zFechaDesde.optional(),
+        hasta: zFechaHasta.optional(),
         proveedor_id: z.coerce.number().optional(),
         page: z.coerce.number().min(1).optional(),
         limit: z.coerce.number().min(1).max(100).optional(),

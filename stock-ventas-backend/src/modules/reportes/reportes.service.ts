@@ -19,12 +19,21 @@ export async function reporteVentas(desde: Date, hasta: Date, agruparPor: Agrupa
   // date_trunc no acepta bind params para la unidad, pero `trunc` sale de un
   // mapeo fijo (no del input crudo del usuario), así que no hay riesgo de
   // inyección SQL acá.
+  //
+  // Las fechas se guardan en UTC (columnas TIMESTAMP sin zona de Prisma):
+  // primero se convierte a la zona del negocio (UTC-3) y recién ahí se trunca
+  // el día, para que una venta de las 22:00 UTC no caiga en el día siguiente.
+  // El período se devuelve como 'YYYY-MM-DD' (día local) para que el front lo
+  // muestre sin depender de la zona horaria del navegador.
   const rows = await prisma.$queryRaw<
-    { periodo: Date; total: string; cantidad_ventas: bigint }[]
+    { periodo: string; total: string; cantidad_ventas: bigint }[]
   >(
     Prisma.sql`
       SELECT
-        date_trunc(${trunc}, fecha) AS periodo,
+        to_char(
+          date_trunc(${trunc}, fecha AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires'),
+          'YYYY-MM-DD'
+        ) AS periodo,
         SUM(total) AS total,
         COUNT(*) AS cantidad_ventas
       FROM ventas

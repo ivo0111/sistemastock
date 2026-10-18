@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { EstadoVenta } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { zFechaDesde, zFechaHasta } from "../../utils/fechas";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import * as service from "./ventas.service";
 import { generarPdfComprobante } from "./comprobante.pdf";
@@ -40,8 +41,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const query = z
       .object({
-        desde: z.coerce.date().optional(),
-        hasta: z.coerce.date().optional(),
+        desde: zFechaDesde.optional(),
+        hasta: zFechaHasta.optional(),
         usuario_id: z.coerce.number().optional(),
         estado: z.nativeEnum(EstadoVenta).optional(),
         page: z.coerce.number().min(1).optional(),

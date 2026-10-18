@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { TipoMovimientoStock } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { zFechaDesde, zFechaHasta } from "../../utils/fechas";
 import { requireAuth } from "../../middleware/auth";
 import * as service from "./stock.service";
 
@@ -21,8 +22,8 @@ router.get(
       .object({
         producto_id: z.coerce.number().optional(),
         tipo: z.enum(TIPOS_VALIDOS).optional(),
-        desde: z.coerce.date().optional(),
-        hasta: z.coerce.date().optional(),
+        desde: zFechaDesde.optional(),
+        hasta: zFechaHasta.optional(),
         page: z.coerce.number().min(1).optional(),
         limit: z.coerce.number().min(1).max(100).optional(),
       })

@@ -20,6 +20,8 @@ import Caja from './pages/caja/Caja'
 import Reportes from './pages/reportes/Reportes'
 import EtiquetasImprimibles from './pages/productos/EtiquetasImprimibles'
 import ImportarProductos from './pages/productos/ImportarProductos'
+import Usuarios from './pages/usuarios/Usuarios'
+import CambiarPassword from './pages/usuarios/CambiarPassword'
 
 export default function App() {
   return (
@@ -113,6 +115,15 @@ export default function App() {
           }
         />
         <Route path="clientes" element={<Clientes />} />
+        <Route
+          path="usuarios"
+          element={
+            <ProtectedRoute adminOnly>
+              <Usuarios />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="cambiar-password" element={<CambiarPassword />} />
         <Route path="caja" element={<Caja />} />
         <Route
           path="reportes"

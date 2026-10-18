@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import { Prisma } from "@prisma/client";
+import { mapearErrorPrisma } from "../utils/prismaErrors";
 import { AppError } from "../utils/AppError";
+
+interface BodyParserError {
+  type?: string;
+  limit?: number;
+}
 
 export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction) {
   if (err instanceof AppError) {
@@ -24,33 +29,32 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
     });
   }
 
+  // Errores de body-parser (express.json / urlencoded)
+  const tipo = (err as BodyParserError | null)?.type;
+  if (tipo === "entity.too.large") {
+    const limiteMb = ((err as BodyParserError).limit ?? 0) / (1024 * 1024);
+    return res.status(413).json({
+      error: {
+        code: "CUERPO_DEMASIADO_GRANDE",
+        message: limiteMb > 0
+          ? `El cuerpo de la petición supera el tamaño máximo permitido (${limiteMb} MB)`
+          : "El cuerpo de la petición supera el tamaño máximo permitido",
+      },
+    });
+  }
+  if (tipo === "entity.parse.failed") {
+    return res.status(400).json({
+      error: { code: "JSON_INVALIDO", message: "El cuerpo de la petición no es un JSON válido" },
+    });
+  }
+
   // Errores conocidos de Prisma: se traducen a códigos HTTP con mensajes claros
   // en lugar de caer en un 500 genérico.
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    const targets = Array.isArray(err.meta?.target) ? (err.meta.target as string[]) : [];
-
-    switch (err.code) {
-      case "P2002": // violación de constraint único
-        return res.status(409).json({
-          error: {
-            code: "RECURSO_DUPLICADO",
-            message: targets.length
-              ? `Ya existe un registro con ese valor en: ${targets.join(", ")}`
-              : "Ya existe un registro con esos datos",
-          },
-        });
-      case "P2003": // foreign key inválida
-        return res.status(409).json({
-          error: {
-            code: "REFERENCIA_INVALIDA",
-            message: "No se puede completar la operación: la referencia no existe o el registro tiene datos asociados",
-          },
-        });
-      case "P2025": // registro a actualizar/eliminar no existe
-        return res.status(404).json({
-          error: { code: "RECURSO_NO_ENCONTRADO", message: "El registro no existe o fue eliminado" },
-        });
-    }
+  const prismaError = mapearErrorPrisma(err);
+  if (prismaError) {
+    return res.status(prismaError.statusCode).json({
+      error: { code: prismaError.code, message: prismaError.message },
+    });
   }
 
   // Error no controlado: lo logueamos pero no exponemos detalles internos al cliente

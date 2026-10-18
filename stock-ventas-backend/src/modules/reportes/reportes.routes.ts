@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { zFechaDesde, zFechaHasta } from "../../utils/fechas";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import * as service from "./reportes.service";
 
@@ -11,8 +12,8 @@ const router = Router();
 router.use(requireAuth, requireRole("ADMIN"));
 
 const rangoSchema = z.object({
-  desde: z.coerce.date().optional(),
-  hasta: z.coerce.date().optional(),
+  desde: zFechaDesde.optional(),
+  hasta: zFechaHasta.optional(),
 });
 
 function rangoPorDefecto(desde?: Date, hasta?: Date) {

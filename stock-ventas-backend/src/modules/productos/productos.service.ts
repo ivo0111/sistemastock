@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
+import { mensajeErrorUsuario } from "../../utils/prismaErrors";
 import { TipoMovimientoStock, Prisma } from "@prisma/client";
 
 interface ListarParams {
@@ -95,8 +96,11 @@ export async function crearProducto(input: CrearProductoInput) {
   const existe = await prisma.producto.findUnique({ where: { sku: input.sku } });
   if (existe) throw new AppError("SKU_DUPLICADO", "Ya existe un producto con ese SKU", 409);
 
-  if (input.codigoBarras) {
-    const existeCB = await prisma.producto.findUnique({ where: { codigoBarras: input.codigoBarras } });
+  // Se guarda y se valida siempre recortado: "779 " y "779" son el mismo código
+  const codigoBarras = input.codigoBarras?.trim() || null;
+
+  if (codigoBarras) {
+    const existeCB = await prisma.producto.findUnique({ where: { codigoBarras } });
     if (existeCB) throw new AppError("CODIGO_BARRAS_DUPLICADO", "Ya existe un producto con ese código de barras", 409);
   }
 
@@ -105,7 +109,7 @@ export async function crearProducto(input: CrearProductoInput) {
     const producto = await tx.producto.create({
        data: {
          sku: input.sku,
-         codigoBarras: input.codigoBarras || null,
+         codigoBarras,
          nombre: input.nombre,
          categoriaId: input.categoriaId,
          precioCosto: input.precioCosto,
@@ -282,7 +286,7 @@ async function procesarFila(
         precioVenta: fila.precioVenta,
         stockActual: fila.stockActual ?? 0,
         stockMinimo: fila.stockMinimo ?? 0,
-        codigoBarras: fila.codigoBarras || null,
+        codigoBarras: fila.codigoBarras?.trim() || null,
         alicuotaIva: fila.alicuotaIva ?? 21,
         unidadMedida: fila.unidadMedida ?? "unidades",
       },
@@ -319,7 +323,7 @@ async function procesarFila(
   if (fila.precioCosto !== undefined) dataActualizar.precioCosto = fila.precioCosto;
   if (fila.precioVenta !== undefined) dataActualizar.precioVenta = fila.precioVenta;
   if (fila.stockMinimo !== undefined) dataActualizar.stockMinimo = fila.stockMinimo;
-  if (fila.codigoBarras !== undefined) dataActualizar.codigoBarras = fila.codigoBarras || null;
+  if (fila.codigoBarras !== undefined) dataActualizar.codigoBarras = fila.codigoBarras?.trim() || null;
   if (fila.alicuotaIva !== undefined) dataActualizar.alicuotaIva = fila.alicuotaIva;
   if (fila.unidadMedida !== undefined) dataActualizar.unidadMedida = fila.unidadMedida;
 
@@ -458,9 +462,12 @@ export async function importarProductos(
           );
           contarResultado(resultado, accion);
         } catch (err: any) {
+          // err.message de Prisma es interno ("Unique constraint failed on ..."):
+          // se muestra un mensaje apto para el usuario y el detalle real se loguea.
+          console.error(`Importación: error en la fila SKU "${fila.sku}":`, err);
           resultado.errores.push({
             sku: fila.sku,
-            motivo: err?.message ?? "Error desconocido al procesar la fila",
+            motivo: mensajeErrorUsuario(err),
           });
         }
       }
