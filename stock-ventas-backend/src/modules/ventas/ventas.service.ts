@@ -1,10 +1,18 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import { EstadoVenta, FormaPago, TipoComprobante, TipoMovimientoStock, Prisma } from "@prisma/client";
+import {
+  EstadoVenta,
+  FormaPago,
+  TipoComprobante,
+  TipoMovimientoCuentaCorriente,
+  TipoMovimientoStock,
+  Prisma,
+} from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { arcaConfig } from "../../config/arca.config";
 import * as arcaService from "../arca/arca.service";
 import { TipoComprobanteArca } from "../arca/arca.types";
+import * as promocionesService from "../promociones/promociones.service";
 import { generarHtmlComprobante } from "./comprobante.template";
 
 
@@ -27,6 +35,16 @@ export async function crearVenta(input: CrearVentaInput) {
     throw new AppError("VENTA_VACIA", "La venta necesita al menos un ítem", 400);
   }
 
+  // A cuenta corriente no se cobra ahora: la deuda se registra contra un
+  // cliente concreto. Sin cliente no hay a quién cobrarle.
+  if (input.formaPago === FormaPago.CUENTA_CORRIENTE && input.clienteId === undefined) {
+    throw new AppError(
+      "CLIENTE_REQUERIDO",
+      "La venta a cuenta corriente necesita un cliente asociado",
+      400
+    );
+  }
+
   // Toda la operación es una única transacción: si falla el stock de cualquier
   // ítem, se revierte todo (no queda una venta a medio confirmar).
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -41,6 +59,10 @@ export async function crearVenta(input: CrearVentaInput) {
         throw new AppError("CLIENTE_NO_ENCONTRADO", `El cliente ${input.clienteId} no existe`, 404);
       }
     }
+
+    // Promociones vigentes: el backend garantiza que ninguna línea quede por
+    // debajo de la promoción (el POS manda la bonificación ya calculada).
+    const promociones = await promocionesService.obtenerPromocionesActivas();
 
     let total = new Decimal(0);
     const itemsData: {
@@ -95,8 +117,18 @@ export async function crearVenta(input: CrearVentaInput) {
         );
       }
 
+      // Bonificación efectiva: la mayor entre la que puso el vendedor y la que
+      // corresponde por promoción vigente.
+      const promo = promocionesService.mejorPromocionPara(
+        promociones,
+        item.productoId,
+        item.cantidad
+      );
+      const bonificacion = new Decimal(
+        Math.max(Number(item.bonificacion ?? 0), promo?.bonificacion ?? 0)
+      );
+
       const precioUnitario = new Decimal(producto[0].precio_venta);
-      const bonificacion = new Decimal(item.bonificacion ?? 0);
       const subtotal = precioUnitario
         .mul(item.cantidad)
         .mul(new Decimal(1).sub(bonificacion.div(100)));
@@ -132,10 +164,18 @@ export async function crearVenta(input: CrearVentaInput) {
     }
     total = total.sub(descuento);
 
+    // La venta queda imputada a la caja abierta del usuario que la registra
+    // (null si no tiene caja abierta: p. ej. un admin sin turno de caja).
+    const cajaAbierta = await tx.caja.findFirst({
+      where: { usuarioId: input.usuarioId, fechaCierre: null },
+      select: { id: true },
+    });
+
     const venta = await tx.venta.create({
       data: {
         clienteId: input.clienteId,
         usuarioId: input.usuarioId,
+        cajaId: cajaAbierta?.id ?? null,
         total,
         descuento,
         formaPago: input.formaPago,
@@ -156,6 +196,26 @@ export async function crearVenta(input: CrearVentaInput) {
           referenciaTipo: "venta",
           referenciaId: venta.id,
         },
+      });
+    }
+
+    // Cuenta corriente: la venta genera un CARGO (monto positivo = sube la
+    // deuda del cliente) y actualiza el saldo caché, en la misma transacción.
+    if (input.formaPago === FormaPago.CUENTA_CORRIENTE && input.clienteId !== undefined) {
+      await tx.movimientoCuentaCorriente.create({
+        data: {
+          clienteId: input.clienteId,
+          tipo: TipoMovimientoCuentaCorriente.CARGO,
+          monto: total,
+          usuarioId: input.usuarioId,
+          referenciaTipo: "venta",
+          referenciaId: venta.id,
+          motivo: `Venta #${venta.id}`,
+        },
+      });
+      await tx.cliente.update({
+        where: { id: input.clienteId },
+        data: { cuentaCorrienteSaldo: { increment: total } },
       });
     }
 
@@ -243,12 +303,21 @@ export async function generarComprobante(id: number, copias = 1): Promise<string
           venta.cliente?.condicionIva ?? null
         ) as TipoComprobanteArca;
 
+        // Correlativo calculado con lock dentro de esta misma transacción:
+        // dos comprobantes concurrentes no pueden repetir número ni pisarse.
+        const numeroComprobanteSugerido = await arcaService.proximoNumeroComprobante(
+          tx,
+          arcaConfig.puntoVenta,
+          tipoComprobante as TipoComprobante
+        );
+
         const resultado = await arcaService.solicitarCAE({
           puntoVenta: arcaConfig.puntoVenta,
           tipoComprobante,
           importeTotal: Number(venta.total),
           fecha: venta.fecha,
           cuitReceptor: venta.cliente?.cuit ?? undefined,
+          numeroComprobanteSugerido,
         });
 
         venta = await tx.venta.update({
@@ -269,7 +338,7 @@ export async function generarComprobante(id: number, copias = 1): Promise<string
     { maxWait: 5000, timeout: 30000 }
   );
 
-  return generarHtmlComprobante(venta, undefined, copias);
+  return await generarHtmlComprobante(venta, undefined, copias);
 }
 
 export async function anularVenta(id: number, motivo: string, usuarioId: number) {
@@ -286,6 +355,29 @@ export async function anularVenta(id: number, motivo: string, usuarioId: number)
       const venta = await tx.venta.findUnique({ where: { id }, select: { estado: true } });
       if (!venta) throw new AppError("VENTA_NO_ENCONTRADA", "La venta no existe", 404);
       throw new AppError("VENTA_YA_ANULADA", "Esta venta ya fue anulada", 409);
+    }
+
+    const venta = await tx.venta.findUniqueOrThrow({ where: { id } });
+
+    // Si la venta fue a cuenta corriente, se revierte el cargo: la deuda del
+    // cliente baja exactamente lo que había subido.
+    if (venta.formaPago === FormaPago.CUENTA_CORRIENTE && venta.clienteId !== null) {
+      const montoRevertido = venta.total.neg();
+      await tx.movimientoCuentaCorriente.create({
+        data: {
+          clienteId: venta.clienteId,
+          tipo: TipoMovimientoCuentaCorriente.PAGO,
+          monto: montoRevertido,
+          usuarioId,
+          referenciaTipo: "venta",
+          referenciaId: id,
+          motivo: `Anulación de venta #${id}`,
+        },
+      });
+      await tx.cliente.update({
+        where: { id: venta.clienteId },
+        data: { cuentaCorrienteSaldo: { increment: montoRevertido } },
+      });
     }
 
     const items = await tx.ventaItem.findMany({ where: { ventaId: id } });
@@ -310,6 +402,6 @@ export async function anularVenta(id: number, motivo: string, usuarioId: number)
       });
     }
 
-    return tx.venta.findUniqueOrThrow({ where: { id } });
+    return venta;
   });
 }

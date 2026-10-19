@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            stock-ventas-backend/package-lock.json
+            stock-ventas-frontend/package-lock.json
+
+      - name: Instalar dependencias (backend)
+        working-directory: stock-ventas-backend
+        run: npm ci
+
+      - name: Instalar dependencias (frontend)
+        working-directory: stock-ventas-frontend
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        working-directory: stock-ventas-backend
+        run: npx prisma generate
+
+      - name: Lint backend (oxlint)
+        working-directory: stock-ventas-backend
+        run: npm run lint
+
+      - name: Typecheck backend
+        working-directory: stock-ventas-backend
+        run: npm run typecheck
+
+      - name: Build backend (tsc)
+        working-directory: stock-ventas-backend
+        run: npm run build
+
+      - name: Lint frontend (oxlint)
+        working-directory: stock-ventas-frontend
+        run: npm run lint
+
+      - name: Build frontend (vite)
+        working-directory: stock-ventas-frontend
+        run: npm run build
+
+      # Los tests de vitest crean y dropean solos la base stock_ventas_test
+      # (ver tests/globalSetup.ts): solo hace falta apuntar DATABASE_URL a una
+      # base descartable y que el servicio de PostgreSQL esté sano.
+      - name: Tests backend (vitest)
+        working-directory: stock-ventas-backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stock_ventas_ci
+          JWT_SECRET: ci-secret-de-test
+        run: npm test

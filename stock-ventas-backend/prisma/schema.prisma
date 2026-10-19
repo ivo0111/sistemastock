@@ -47,6 +47,9 @@ enum FormaPago {
   EFECTIVO
   TARJETA
   TRANSFERENCIA
+  // Venta al contado "en cuenta": genera un CARGO en la cuenta corriente del
+  // cliente (sube su deuda) en lugar de cobrar ahora.
+  CUENTA_CORRIENTE
 }
 
 // Usados para el comprobante fiscal (integración ARCA / ex-AFIP)
@@ -79,6 +82,7 @@ model Usuario {
   ventas            Venta[]
   movimientosStock  MovimientoStock[]
   cajaAperturas     Caja[]
+  compras           Compra[]
   movimientosCuentaCorriente MovimientoCuentaCorriente[]
   @@map("usuarios")
 }
@@ -194,6 +198,9 @@ model Venta {
   id          Int         @id @default(autoincrement())
   clienteId   Int?        @map("cliente_id")
   usuarioId   Int         @map("usuario_id")
+  // Caja (turno de caja) en la que se registró la venta. Null solo si el
+  // usuario no tenía una caja abierta al momento de vender.
+  cajaId      Int?        @map("caja_id")
   fecha       DateTime    @default(now())
   total       Decimal     @db.Decimal(12, 2)
   descuento   Decimal     @default(0) @db.Decimal(12, 2)
@@ -210,6 +217,7 @@ model Venta {
 
   cliente Cliente?    @relation(fields: [clienteId], references: [id])
   usuario Usuario     @relation(fields: [usuarioId], references: [id])
+  caja    Caja?       @relation(fields: [cajaId], references: [id])
   items   VentaItem[]
 
   @@index([fecha])
@@ -253,11 +261,15 @@ model Proveedor {
 model Compra {
   id          Int          @id @default(autoincrement())
   proveedorId Int          @map("proveedor_id")
+  // Quién registró la compra. Nullable solo por filas antiguas creadas antes
+  // de guardar el autor: toda compra nueva lleva el usuario.
+  usuarioId   Int?         @map("usuario_id")
   fecha       DateTime     @default(now())
   total       Decimal      @db.Decimal(12, 2)
   estado      EstadoCompra @default(RECIBIDA)
 
   proveedor Proveedor    @relation(fields: [proveedorId], references: [id])
+  usuario   Usuario?     @relation(fields: [usuarioId], references: [id])
   items     CompraItem[]
 
   @@map("compras")
@@ -287,11 +299,15 @@ model Caja {
   fechaCierre       DateTime? @map("fecha_cierre")
   montoInicial      Decimal   @map("monto_inicial") @db.Decimal(12, 2)
   montoFinalContado Decimal?  @map("monto_final_contado") @db.Decimal(12, 2)
-  montoFinalEsperado Decimal? @map("monto_final_esperado") @db.Decimal(12, 2)
+  montoFinalEsperado Decimal?  @map("monto_final_esperado") @db.Decimal(12, 2)
   diferencia        Decimal?  @db.Decimal(12, 2)
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
+  ventas  Venta[]
 
+  // Además está el índice único parcial "caja_abierta_unica_por_usuario"
+  // (creado en la migración): cada usuario puede tener a lo sumo UNA caja
+  // abierta, y es la base para cerrar la condición de carrera de apertura.
   @@map("caja")
 }
 

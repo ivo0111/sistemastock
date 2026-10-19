@@ -1,108 +1,146 @@
-# Backend — Sistema de Gestión de Stock y Ventas
+# Sistema de Gestión de Stock y Ventas
 
-Node + Express + TypeScript + Prisma + PostgreSQL.
+Aplicación full-stack para comercio minorista: POS, stock con auditoría de
+movimientos, facturación electrónica ARCA (modo mock por default), cuenta
+corriente de clientes, caja, compras a proveedores y reportes.
 
-## Puesta en marcha
+## Stack
 
-Para un usuario final en Windows sin conocimientos técnicos, seguí la guía
-completa en [`INSTALACION.md`](../INSTALACION.md) (raíz del repo) y usá
-`Iniciar Sistema.bat` para el uso diario. Lo que sigue es la puesta en
-marcha resumida para desarrollo.
+- **Backend** (`stock-ventas-backend/`): Node.js + Express + TypeScript + Prisma + PostgreSQL
+- **Frontend** (`stock-ventas-frontend/`): React + Vite. En producción no necesita
+  servidor aparte: el build queda en `stock-ventas-frontend/dist/` y el propio
+  backend lo sirve en el mismo puerto.
+- **Instalador Windows** (`installer/`): Inno Setup + `Iniciar Sistema.bat`
 
-1. **Instalar dependencias**
-   ```bash
-   npm install
-   ```
+## Usuarios finales (Windows)
 
-2. **Base de datos**: PostgreSQL corriendo de forma nativa (recomendado,
-   ver `INSTALACION.md`) o, si preferís seguir usando Docker en desarrollo,
-   con el script alternativo:
-   ```bash
-   npm run predev:docker   # levanta el contenedor stock-ventas-db (ver scripts/ensure-docker.js)
-   ```
-   Con PostgreSQL nativo instalado, `npm run dev` ya se encarga de
-   verificar/levantar el servicio automáticamente (`scripts/ensure-postgres.js`,
-   corre como hook `predev`) — no hace falta nada manual acá.
+1. Seguí la guía paso a paso en [INSTALACION.md](INSTALACION.md).
+2. Uso diario: doble clic en `Iniciar Sistema.bat`. Abre `http://localhost:3000`.
+   El script verifica PostgreSQL, aplica migraciones pendientes, compila backend
+   y frontend, y levanta el servidor.
 
-3. **Variables de entorno**
-   ```bash
-   cp .env.example .env
-   ```
-   Editá `.env` y ajustá `DATABASE_URL` con tus credenciales reales (usuario
-   y contraseña de tu PostgreSQL nativo, no las del viejo contenedor Docker),
-   y `JWT_SECRET` con un valor random largo (podés generar uno con
-   `openssl rand -hex 32`).
+Usuario inicial: `admin` / `admin123` (cambialo en el primer ingreso).
 
-4. **Migración inicial** (crea las tablas en la base de datos)
-   ```bash
-   npx prisma migrate dev --name init
-   ```
-
-5. **Seed** (crea el usuario admin inicial: `admin` / `admin123`)
-   ```bash
-   npm run seed
-   ```
-
-6. **Levantar el servidor en desarrollo**
-   ```bash
-   npm run dev
-   ```
-   Esto corre primero `scripts/ensure-postgres.js` (verifica/levanta el
-   servicio de PostgreSQL nativo y crea la base `stock_ventas` si no existe)
-   y después arranca el servidor. Debería quedar escuchando en
-   `http://localhost:3000`.
-
-   Si preferís seguir usando el contenedor Docker en vez de PostgreSQL
-   nativo durante el desarrollo, usá `npm run dev:docker` en su lugar
-   (corre `scripts/ensure-docker.js`, que se conserva como alternativa).
-
-7. **Probar que responde**
-   ```bash
-   curl http://localhost:3000/api/v1/health
-   ```
-
-## Estructura del proyecto
+## Estructura del repositorio
 
 ```
-src/
-  app.ts              # configuración de Express y montaje de rutas
-  server.ts            # punto de entrada
-  lib/prisma.ts         # cliente de Prisma (singleton)
-  middleware/
-    auth.ts             # requireAuth, requireRole
-    errorHandler.ts      # manejo centralizado de errores
-  utils/
-    AppError.ts          # clase de error de aplicación
-    asyncHandler.ts       # wrapper para controllers async
-  modules/
-    auth/                # login
-    productos/            # CRUD + búsqueda + ajuste de stock
-    ventas/                # el módulo más importante: venta transaccional
-prisma/
-  schema.prisma          # modelo de datos completo
-  seed.ts                 # usuario admin inicial
+.
+├── Iniciar Sistema.bat        # arranque diario para usuarios finales
+├── INSTALACION.md             # guía de instalación (usuarios finales)
+├── api.md                     # contrato de la API REST
+├── installer/                 # Inno Setup (el .exe se genera, no se versiona)
+├── stock-ventas-backend/
+│   ├── src/
+│   │   ├── app.ts             # Express: rutas + estáticos + SPA fallback
+│   │   ├── server.ts          # punto de entrada + apagado ordenado
+│   │   ├── lib/prisma.ts      # cliente Prisma (singleton)
+│   │   ├── middleware/        # requireAuth, requireRole, errorHandler
+│   │   └── modules/           # auth, productos, ventas, compras, clientes,
+│   │                          # caja, categorias, proveedores, stock,
+│   │                          # reportes, usuarios, promociones, arca
+│   ├── prisma/                # schema.prisma, migraciones, seed
+│   └── tests/                 # vitest (crea/dropea stock_ventas_test sola)
+└── stock-ventas-frontend/
+    └── src/
+        ├── api/client.js      # cliente fetch con JWT
+        ├── pages/             # POS, productos, ventas, compras, clientes,
+        │                      # caja, reportes, promociones, usuarios...
+        └── components/        # Layout y componentes compartidos
 ```
 
-## Lo ya implementado
+## Desarrollo
 
-- **Auth**: login con JWT (`POST /api/v1/auth/login`)
-- **Productos**: CRUD completo, búsqueda rápida para POS, ajuste manual de stock
-- **Ventas**: creación transaccional (con lock de fila `FOR UPDATE` para evitar sobreventa en concurrencia), listado, detalle, anulación con reversión de stock
+Requisitos: Node.js 20+ (probado con 24) y PostgreSQL 14+ local
+(ver `INSTALACION.md`; en desarrollo `npm run dev` lo verifica/levanta solo).
 
-## Lo que falta implementar (mismo patrón que productos/ventas)
+### Backend
 
-Cada uno sigue la estructura `modulo/modulo.service.ts` + `modulo/modulo.routes.ts`, montado en `app.ts`:
+```bash
+cd stock-ventas-backend
+npm install
+cp .env.example .env    # editar DATABASE_URL y JWT_SECRET
+npx prisma migrate dev  # crea las tablas
+npm run seed            # usuario admin inicial
+npm run dev             # http://localhost:3000
+```
 
-- [ ] **categorias**: CRUD simple
-- [ ] **proveedores**: CRUD simple
-- [ ] **compras**: similar a ventas pero sumando stock en vez de restando
-- [ ] **clientes**: CRUD + cuenta corriente
-- [ ] **caja**: apertura/cierre con cálculo de diferencia
-- [ ] **reportes**: agregaciones sobre `ventas` y `movimientos_stock` (usar `prisma.venta.groupBy` o `$queryRaw` para las agregaciones más complejas)
+Comandos útiles: `npm run build`, `npm start`, `npm test`, `npm run lint`,
+`npm run typecheck`, `npm run prisma:migrate`, `npm run seed`.
 
-## Notas de diseño importantes
+### Frontend
 
-- **Nunca se actualiza `stock_actual` directamente desde una ruta.** Todo cambio de stock pasa por una transacción que también crea un registro en `movimientos_stock` — es la fuente de verdad para auditoría.
-- **Todos los montos usan `Decimal`**, nunca `number`/`float`, para evitar errores de redondeo con plata real.
-- **La venta usa `SELECT ... FOR UPDATE`** sobre cada producto antes de descontar stock, para que dos ventas simultáneas no puedan vender más unidades de las que hay disponibles.
-- **Los productos nunca se borran físicamente**, solo baja lógica (`activo: false`), porque ya pueden tener ventas o compras asociadas.
+```bash
+cd stock-ventas-frontend
+npm install
+npm run dev             # http://localhost:5173 (proxy /api -> :3000)
+```
+
+En desarrollo se labura contra `vite dev`; para probar como usuario final,
+`npm run build` y arrancá el backend (o `Iniciar Sistema.bat`).
+
+## Tests
+
+```bash
+cd stock-ventas-backend
+npm test
+```
+
+Vitest contra una base descartable `stock_ventas_test` que se crea y se
+elimina sola al principio y al final de cada corrida
+(`stock-ventas-backend/tests/globalSetup.ts`): nunca toca la base de
+desarrollo. Cubren venta transaccional (incluida concurrencia/sobreventa),
+anulación, ajuste de stock, importación masiva y cuenta corriente.
+
+## CI
+
+`.github/workflows/ci.yml` (GitHub Actions): lint + typecheck + build de ambos
+proyectos y tests del backend contra un PostgreSQL efímero.
+
+## Documentación
+
+- [INSTALACION.md](INSTALACION.md): instalación para usuarios finales.
+- [api.md](api.md): contrato de la API REST (endpoints, payloads, roles).
+
+## Funcionalidades
+
+- **Auth**: JWT con roles `ADMIN` / `VENDEDOR`, rate-limit en login.
+- **Productos**: CRUD, búsqueda rápida para POS, etiquetas de precios,
+  importación masiva Excel/CSV por lotes de 500 filas.
+- **Stock**: todo cambio pasa por `movimientos_stock` (auditoría completa);
+  ajustes manuales con motivo.
+- **Ventas (POS)**: transacción única con `SELECT ... FOR UPDATE` (sin
+  sobreventa), bonificaciones, promociones vigentes, descuento global,
+  formas de pago efectivo/tarjeta/transferencia/cuenta corriente.
+- **Comprobante**: HTML + PDF (puppeteer-core sobre Chrome/Edge del sistema,
+  o `PDF_BROWSER_PATH`), QR local y datos ARCA (CAE, punto de venta, tipo de
+  comprobante). `ARCA_MODO=mock` genera CAE simulado; `homologacion` /
+  `produccion` requieren certificado digital (ver `.env.example`).
+- **Cuenta corriente**: cargos por venta a crédito, pagos/ajustes con
+  validación de signo, historial de movimientos por cliente.
+- **Caja**: una caja abierta por usuario, ventas imputadas a la caja del
+  turno, cierre con diferencia contado vs. esperado.
+- **Compras**: registran proveedor y usuario, suman stock y actualizan
+  precio costo opcionalmente; rechazan productos inactivos.
+- **Promociones**: porcentual, segunda unidad y dos por uno; globales o por
+  producto; el backend garantiza la mejor bonificación vigente.
+- **Reportes**: ventas por día/semana/mes, productos más vendidos, margen,
+  stock bajo.
+
+## Notas de diseño
+
+- **Nunca se escribe `stock_actual` "a mano"**: todo cambio crea un
+  movimiento de stock (fuente de verdad de auditoría).
+- **Montos con `Decimal`**, nunca float, para no acumular errores de redondeo.
+- **Concurrencia**: `SELECT ... FOR UPDATE` sobre la fila del producto en
+  venta, ajuste de stock e importación: dos operaciones simultáneas no pueden
+  vender más de lo disponible.
+- **Productos no se borran físicamente**: baja lógica (`activo: false`), ya
+  pueden tener ventas/compras asociadas.
+- **Correlativo de comprobante**: asignado con advisory lock dentro de la
+  transacción que pide el CAE; dos comprobantes concurrentes no se pisan.
+
+## Compilar el instalador
+
+`installer/setup.iss` con [Inno Setup](https://jrsoftware.org/isinfo.php).
+El resultado queda en `installer/Output/` (ignorado por git); para
+distribuirlo, súbelo a una GitHub Release del repositorio.

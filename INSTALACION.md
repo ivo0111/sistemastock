@@ -78,15 +78,16 @@ el sistema dia a dia:
 1. Andá a la carpeta de instalacion (`C:\Program Files\SistemaStock`).
 2. Hace **doble clic en `Iniciar Sistema.bat`** (o usa el acceso directo
    del Escritorio o Menu Inicio que creo el instalador).
-3. Se van a abrir un par de ventanas minimizadas (son el backend y el
-   frontend corriendo) y una ventana principal que va a mostrar el progreso.
+3. Se va a abrir una ventana minimizada (es el servidor, que tambien te
+   sirve la pagina del sistema) y una ventana principal que va a mostrar el
+   progreso (aplica actualizaciones de base de datos y compila el sistema).
 4. Cuando este todo listo, se va a abrir tu navegador automaticamente en
-   `http://localhost:5173` con el sistema.
+   `http://localhost:3000` con el sistema.
 5. **No cierres la ventana principal** (la que dice "Sistema iniciado - no
    cierres esta ventana") mientras estes usando el sistema.
 6. Para cerrar todo prolijamente al terminar de usarlo, volvi a esa ventana
-   principal y presiona cualquier tecla — eso cierra el backend y el
-   frontend de forma ordenada.
+   principal y presiona cualquier tecla — eso cierra el servidor de forma
+   ordenada.
 
 **Credenciales iniciales**: usuario `admin`, contrasena `admin123`.
 Cambia esta contrasena la primera vez que entres al sistema.

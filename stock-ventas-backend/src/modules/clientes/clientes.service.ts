@@ -123,6 +123,24 @@ export async function ajustarCuentaCorriente(
 ) {
   await obtenerCliente(id);
 
+  // Validación de signo según el tipo: CARGO = deuda para arriba (positivo),
+  // PAGO = deuda para abajo (negativo). Sin esto, un "PAGO" con monto
+  // positivo terminaba AUMENTANDO la deuda del cliente.
+  if (tipo === "CARGO" && monto < 0) {
+    throw new AppError(
+      "MONTO_SIGNO_INVALIDO",
+      "Un CARGO debe ser positivo: aumenta la deuda del cliente",
+      400
+    );
+  }
+  if (tipo === "PAGO" && monto > 0) {
+    throw new AppError(
+      "MONTO_SIGNO_INVALIDO",
+      "Un PAGO debe ser negativo: reduce la deuda del cliente (envialo con signo menos)",
+      400
+    );
+  }
+
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.movimientoCuentaCorriente.create({
       data: {

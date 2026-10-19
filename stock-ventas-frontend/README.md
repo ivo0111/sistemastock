@@ -1,16 +1,59 @@
-# React + Vite
+# Frontend — Sistema de Gestión de Stock y Ventas
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Vite (JavaScript).
 
-Currently, two official plugins are available:
+El contexto del proyecto vive en el [README de la raíz](../README.md); acá
+solo lo específico del frontend.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Desarrollo
 
-## React Compiler
+```bash
+npm install
+npm run dev          # http://localhost:5173
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+El dev server de Vite tiene proxy de `/api` hacia el backend en
+`http://localhost:3000` (ver `vite.config.js`): levantá el backend
+(`npm run dev` en `stock-ventas-backend/`) y usá el frontend por 5173.
 
-## Expanding the Oxlint configuration
+## Build de producción
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+npm run build        # genera dist/
+```
+
+En producción **no hay servidor de frontend aparte**: el backend Express
+sirve `stock-ventas-frontend/dist` en `http://localhost:3000` (estáticos +
+SPA fallback). `Iniciar Sistema.bat` compila este build en cada arranque.
+
+## Comandos
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev` | desarrollo con HMR en :5173 |
+| `npm run build` | build de producción en `dist/` |
+| `npm run lint` | oxlint |
+
+## Estructura
+
+```
+src/
+  api/client.js        # fetch con JWT, manejo de errores y refresh de sesión
+  context/AuthContext.jsx
+  components/          # Layout, UI compartida
+  pages/
+    auth/              # login
+    ventas/            # POS, listado y detalle de ventas, comprobante
+    productos/         # CRUD, stock, importación masiva (wizard por pasos)
+    compras/, clientes/, caja/, categorias/, proveedores/
+    reportes/, usuarios/, promociones/
+  utils/               # promociones (cálculo de bonificación), fechas, etc.
+```
+
+## Notas
+
+- La bonificación de promociones se calcula en `src/utils/promociones.js` y
+  el backend vuelve a validar/aplicar la mejor vigente al confirmar la venta:
+  el front es solo UX, la fuente de verdad es el backend.
+- El comprobante se abre en una ventana hija (`document.write`): el backend
+  remueve el header CSP en el fallback SPA para que eso funcione.

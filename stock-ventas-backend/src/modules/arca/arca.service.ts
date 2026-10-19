@@ -1,6 +1,13 @@
 import { AppError } from "../../utils/AppError";
 import { arcaConfig } from "../../config/arca.config";
 import { SolicitudCAE, ResultadoCAE } from "./arca.types";
+import { prisma } from "../../lib/prisma";
+import { Prisma, TipoComprobante } from "@prisma/client";
+
+// Clave del advisory lock de Postgres para serializar la asignación de números
+// de comprobante (en la práctica son pocas por segundo: pedir un comprobante).
+// El lock se libera solo al hacer commit/rollback de la transacción que lo tomó.
+const LOCK_ASIGNACION_NUMEROS = 710_001;
 
 /**
  * Integración con ARCA (ex-AFIP) — Web Service de Facturación Electrónica
@@ -50,19 +57,52 @@ export async function solicitarCAE(input: SolicitudCAE): Promise<ResultadoCAE> {
   );
 }
 
-function solicitarCAEMock(input: SolicitudCAE): ResultadoCAE {
-  const numeroComprobante = Math.floor(Date.now() / 1000) % 100000000;
+/**
+ * Próximo número de comprobante correlativo para (punto de venta, tipo).
+ *
+ * Se llama DENTRO de la transacción que va a persistir el número: el advisory
+ * lock serializa los pedidos concurrentes, así dos ventas nunca reciben el
+ * mismo número ni el secuencial se repite dentro del mismo segundo (el cálculo
+ * anterior, `Date.now()` en segundos, colisionaba y podía ir "hacia atrás").
+ *
+ * En modo real esto lo reemplaza FECompUltimoAutorizado de ARCA.
+ */
+export async function proximoNumeroComprobante(
+  tx: Prisma.TransactionClient,
+  puntoVenta: number,
+  tipoComprobante: TipoComprobante
+): Promise<number> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_ASIGNACION_NUMEROS}::bigint)`;
+
+  const ultimo = await tx.venta.aggregate({
+    where: { puntoVenta, tipoComprobante },
+    _max: { numeroComprobante: true },
+  });
+
+  return (ultimo._max.numeroComprobante ?? 0) + 1;
+}
+
+async function solicitarCAEMock(input: SolicitudCAE): Promise<ResultadoCAE> {
+  const numeroComprobante =
+    input.numeroComprobanteSugerido ?? (await ultimoNumeroGlobal()) + 1;
   const caeVencimiento = new Date();
   caeVencimiento.setDate(caeVencimiento.getDate() + 10);
 
   return {
-    cae: `MOCK${String(numeroComprobante).padStart(14, "0")}`,
+    cae: `MOCK${String(numeroComprobante).padStart(10, "0")}`,
     caeVencimiento,
     numeroComprobante,
     puntoVenta: input.puntoVenta,
     tipoComprobante: input.tipoComprobante,
     observaciones: ["CAE simulado (ARCA_MODO=mock) — no tiene validez fiscal"],
   };
+}
+
+// Respaldo si el caller no envió el correlativo (solo posible invocando la
+// función a mano): sigue siendo correlativo (max + 1), no un timestamp.
+async function ultimoNumeroGlobal(): Promise<number> {
+  const ultimo = await prisma.venta.aggregate({ _max: { numeroComprobante: true } });
+  return ultimo._max.numeroComprobante ?? 0;
 }
 
 /**

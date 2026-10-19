@@ -114,7 +114,9 @@ export default function VentaDetalle() {
           </div>
           <div>
             <div className="text-sm text-gray">Forma de Pago</div>
-            <div style={{ textTransform: 'capitalize' }}>{venta.formaPago?.toLowerCase()}</div>
+            <div style={{ textTransform: 'capitalize' }}>
+              {venta.formaPago?.toLowerCase().replace(/_/g, ' ') || '-'}
+            </div>
           </div>
           <div>
             <div className="text-sm text-gray">Cliente</div>

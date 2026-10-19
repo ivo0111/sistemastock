@@ -7,6 +7,12 @@ export interface SolicitudCAE {
   fecha: Date;
   /** CUIT del receptor. Si no hay, se factura como consumidor final. */
   cuitReceptor?: string;
+  /**
+   * Correlativo calculado por el caller (dentro de su transacción, con lock).
+   * Solo lo usa el modo mock; el modo real pide el próximo número a ARCA
+   * (FECompUltimoAutorizado).
+   */
+  numeroComprobanteSugerido?: number;
 }
 
 export interface ResultadoCAE {

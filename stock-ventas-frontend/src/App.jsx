@@ -16,6 +16,7 @@ import ComprasList from './pages/compras/ComprasList'
 import CompraForm from './pages/compras/CompraForm'
 import CompraDetalle from './pages/compras/CompraDetalle'
 import Clientes from './pages/clientes/Clientes'
+import Promociones from './pages/promociones/Promociones'
 import Caja from './pages/caja/Caja'
 import Reportes from './pages/reportes/Reportes'
 import EtiquetasImprimibles from './pages/productos/EtiquetasImprimibles'
@@ -115,6 +116,14 @@ export default function App() {
           }
         />
         <Route path="clientes" element={<Clientes />} />
+        <Route
+          path="promociones"
+          element={
+            <ProtectedRoute adminOnly>
+              <Promociones />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="usuarios"
           element={

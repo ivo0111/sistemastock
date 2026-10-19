@@ -44,6 +44,16 @@ export async function crearCompra(input: CrearCompraInput) {
         );
       }
 
+      // Igual que en ventas: no se puede comprar un producto dado de baja.
+      // Si hay que reactivarlo, se hace aparte (editar el producto).
+      if (!producto.activo) {
+        throw new AppError(
+          "PRODUCTO_INACTIVO",
+          `El producto "${producto.nombre}" está inactivo y no puede comprarse`,
+          409
+        );
+      }
+
       total = total.add(new Decimal(item.precioUnitario).mul(item.cantidad));
       itemsData.push(item);
 
@@ -59,6 +69,7 @@ export async function crearCompra(input: CrearCompraInput) {
     const compra = await tx.compra.create({
       data: {
         proveedorId: input.proveedorId,
+        usuarioId: input.usuarioId,
         total,
         estado: EstadoCompra.RECIBIDA,
         items: { create: itemsData },
@@ -102,7 +113,11 @@ export async function listarCompras(params: {
       where,
       skip: (page - 1) * limit,
       take: limit,
-      include: { items: true, proveedor: true },
+      include: {
+        items: true,
+        proveedor: true,
+        usuario: { select: { id: true, nombre: true } },
+      },
       orderBy: { fecha: "desc" },
     }),
     prisma.compra.count({ where }),
@@ -114,7 +129,11 @@ export async function listarCompras(params: {
 export async function obtenerCompra(id: number) {
   const compra = await prisma.compra.findUnique({
     where: { id },
-    include: { items: { include: { producto: true } }, proveedor: true },
+    include: {
+      items: { include: { producto: true } },
+      proveedor: true,
+      usuario: { select: { id: true, nombre: true } },
+    },
   });
   if (!compra) throw new AppError("COMPRA_NO_ENCONTRADA", "La compra no existe", 404);
   return compra;

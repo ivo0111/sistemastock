@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import QRCode from "qrcode";
 import { arcaConfig } from "../../config/arca.config";
 import { ResultadoCAE } from "../arca/arca.types";
 import { CONDICION_IVA_LABEL, CODIGO_TIPO_COMPROBANTE } from "./arca.labels";
@@ -12,6 +13,17 @@ const TIPO_COMPROBANTE_LABEL: Record<string, string> = {
   FACTURA_B: "FACTURA B",
   FACTURA_C: "FACTURA C",
 };
+
+const FORMA_PAGO_LABEL: Record<string, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA: "Tarjeta",
+  TRANSFERENCIA: "Transferencia",
+  CUENTA_CORRIENTE: "Cuenta Corriente",
+};
+
+// Código ARCA de la Factura C: los comprobantes de este tipo no discriminan IVA
+// (emisor Monotributo), así que el desglose no corresponde mostrarlo.
+const CODIGO_FACTURA_C = "11";
 
 function escapeHtml(valor: string): string {
   return valor
@@ -27,28 +39,56 @@ function formatearMoneda(valor: Prisma.Decimal | number): string {
   );
 }
 
-interface DetalleIva {
-  alicuota: number;
-  baseImponible: number;
-  montoIva: number;
+const DOS_DECIMALES = 2;
+
+function redondear2(valor: Prisma.Decimal): Prisma.Decimal {
+  return valor.toDecimalPlaces(DOS_DECIMALES, Prisma.Decimal.ROUND_HALF_UP);
 }
 
+interface DetalleIva {
+  alicuota: number;
+  baseImponible: Prisma.Decimal;
+  montoIva: Prisma.Decimal;
+}
+
+/**
+ * Arma el desglose de IVA agrupado por alícuota, en Decimal (no en floats:
+ * los centavos del comprobante deben cuadrar con el total guardado).
+ *
+ * El descuento global de la venta se prorratea entre los ítems en proporción
+ * a su subtotal: sin eso, el "Importe Neto Gravado" + IVA no cerraría contra
+ * el Total cuando hay descuento.
+ */
 function calcularDesgloseIva(
-  items: VentaConDetalle["items"]
+  items: VentaConDetalle["items"],
+  descuento: Prisma.Decimal
 ): DetalleIva[] {
-  const map = new Map<number, { baseImponible: number; montoIva: number }>();
+  const subtotalTotal = items.reduce((suma, item) => suma.add(item.subtotal), new Prisma.Decimal(0));
+  if (subtotalTotal.isZero()) return [];
+
+  const map = new Map<number, { baseImponible: Prisma.Decimal; montoIva: Prisma.Decimal }>();
 
   for (const item of items) {
     const alicuota = Number(item.producto.alicuotaIva ?? 21);
-    const subtotal = Number(item.subtotal);
-    const divisor = 1 + alicuota / 100;
-    const baseImponible = subtotal / divisor;
-    const montoIva = baseImponible * (alicuota / 100);
+    const subtotal = new Prisma.Decimal(item.subtotal);
 
-    const existing = map.get(alicuota) ?? { baseImponible: 0, montoIva: 0 };
-    existing.baseImponible += baseImponible;
-    existing.montoIva += montoIva;
-    map.set(alicuota, existing);
+    // Prorrateo del descuento global sobre este ítem
+    const parteDescuento = subtotal.mul(descuento).div(subtotalTotal);
+    const subtotalNeto = subtotal.sub(parteDescuento);
+
+    const divisor = new Prisma.Decimal(1).add(new Prisma.Decimal(alicuota).div(100));
+    const baseImponible = redondear2(subtotalNeto.div(divisor));
+    // El IVA es el resto: base + IVA == subtotalNeto exactamente (sin sobrantes)
+    const montoIva = subtotalNeto.sub(baseImponible);
+
+    const acumulado = map.get(alicuota) ?? {
+      baseImponible: new Prisma.Decimal(0),
+      montoIva: new Prisma.Decimal(0),
+    };
+    map.set(alicuota, {
+      baseImponible: acumulado.baseImponible.add(baseImponible),
+      montoIva: acumulado.montoIva.add(montoIva),
+    });
   }
 
   return Array.from(map.entries())
@@ -60,16 +100,23 @@ function calcularDesgloseIva(
     }));
 }
 
-/** Arma la URL del QR fiscal que exige ARCA (ver "Especificación Técnica QR"). */
-function armarUrlQrArca(venta: VentaConDetalle) {
+/**
+ * Arma la URL del QR fiscal que exige ARCA (ver "Especificación Técnica QR").
+ * `tipoCmp` debe ir con el código numérico del comprobante (01, 06, 11…),
+ * no con el nombre interno ("FACTURA_C").
+ */
+function armarUrlQrArca(venta: VentaConDetalle): string | null {
+  const codigoTipoCmp = CODIGO_TIPO_COMPROBANTE[venta.tipoComprobante ?? "FACTURA_B"];
+  if (!codigoTipoCmp || !venta.cae) return null;
+
   const payload = {
     ver: 1,
     fecha: venta.fecha.toISOString().slice(0, 10),
     cuit: Number(arcaConfig.cuitEmisor || 0),
     ptoVta: venta.puntoVenta,
-    tipoCmp: venta.tipoComprobante,
+    tipoCmp: Number(codigoTipoCmp),
     nroCmp: venta.numeroComprobante,
-    importe: Number(venta.total),
+    importe: Number(new Prisma.Decimal(venta.total).toDecimalPlaces(2)),
     moneda: "PES",
     ctz: 1,
     tipoDocRec: venta.cliente?.cuit ? 80 : 99,
@@ -80,44 +127,80 @@ function armarUrlQrArca(venta: VentaConDetalle) {
   return `https://www.afip.gob.ar/fe/qr/?p=${base64}`;
 }
 
-export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: ResultadoCAE, copias = 1) {
+export async function generarHtmlComprobante(
+  venta: VentaConDetalle,
+  _resultadoCAE?: ResultadoCAE,
+  copias = 1
+): Promise<string> {
   const esMock = arcaConfig.modo === "mock";
-  const tipoLabel = TIPO_COMPROBANTE_LABEL[venta.tipoComprobante ?? "FACTURA_B"];
-  const urlQr = venta.cae ? armarUrlQrArca(venta) : null;
+  const tipoComprobante = venta.tipoComprobante ?? "FACTURA_B";
+  const tipoLabel = TIPO_COMPROBANTE_LABEL[tipoComprobante];
+  const codigoTipoCmp = CODIGO_TIPO_COMPROBANTE[tipoComprobante] ?? "";
+  // Solo A y B discriminan IVA. La Factura C (Monotributo) imprime precios finales.
+  const discriminaIva = codigoTipoCmp !== CODIGO_FACTURA_C;
 
-  const desgloseIva = calcularDesgloseIva(venta.items);
+  const urlQr = armarUrlQrArca(venta);
+  // QR generado localmente: sin dependencia de servicios de terceros y sin
+  // necesidad de internet para imprimir el comprobante.
+  const qrDataUrl = urlQr
+    ? await QRCode.toDataURL(urlQr, { margin: 1, width: 320, errorCorrectionLevel: "M" })
+    : null;
+
+  const descuento = new Prisma.Decimal(venta.descuento ?? 0);
+  const subtotalBruto = venta.items.reduce(
+    (suma, item) => suma.add(item.subtotal),
+    new Prisma.Decimal(0)
+  );
+  const desgloseIva = discriminaIva ? calcularDesgloseIva(venta.items, descuento) : [];
 
   const filasItems = venta.items
-    .map(
-      (item) => {
-        const alicuota = Number(item.producto.alicuotaIva ?? 21);
-        const bonif = Number(item.bonificacionPorcentaje ?? 0);
-        const divisor = 1 + alicuota / 100;
-        const precioSinIva = Number(item.precioUnitario) / divisor;
-        const sub = precioSinIva * Number(item.cantidad) * (1 - bonif / 100);
-        const subConIva = sub * divisor;
-        return `
-      <tr>
+    .map((item) => {
+      const bonif = new Prisma.Decimal(item.bonificacionPorcentaje ?? 0);
+      const subtotal = new Prisma.Decimal(item.subtotal);
+      const celdasBase = `
         <td>${escapeHtml(item.producto.sku || "-")}</td>
         <td>${escapeHtml(item.producto.nombre)}</td>
-        <td>${escapeHtml(item.producto.unidadMedida)}</td>
-        <td class="num">${formatearMoneda(precioSinIva)}</td>
+        <td>${escapeHtml(item.producto.unidadMedida)}</td>`;
+
+      if (!discriminaIva) {
+        return `
+      <tr>
+        ${celdasBase}
+        <td class="num">${formatearMoneda(item.precioUnitario)}</td>
         <td class="num">${bonif.toFixed(2)}</td>
         <td class="num">${item.cantidad}</td>
-        <td class="num">${formatearMoneda(sub)}</td>
-        <td class="num">${alicuota}%</td>
-        <td class="num">${formatearMoneda(subConIva)}</td>
+        <td class="num">${formatearMoneda(subtotal)}</td>
       </tr>`;
       }
-    )
+
+      const alicuota = Number(item.producto.alicuotaIva ?? 21);
+      const divisor = new Prisma.Decimal(1).add(new Prisma.Decimal(alicuota).div(100));
+      const precioNeto = redondear2(new Prisma.Decimal(item.precioUnitario).div(divisor));
+      const subtotalNeto = redondear2(subtotal.div(divisor));
+
+      return `
+      <tr>
+        ${celdasBase}
+        <td class="num">${formatearMoneda(precioNeto)}</td>
+        <td class="num">${bonif.toFixed(2)}</td>
+        <td class="num">${item.cantidad}</td>
+        <td class="num">${formatearMoneda(subtotalNeto)}</td>
+        <td class="num">${alicuota}%</td>
+        <td class="num">${formatearMoneda(subtotal)}</td>
+      </tr>`;
+    })
     .join("");
+
+  const encabezadoTabla = discriminaIva
+    ? `<tr><th>Código</th><th>Producto</th><th>U. medida</th><th class="num">P. Unit.</th><th class="num">% Bonif.</th><th class="num">Cant.</th><th class="num">Subtotal</th><th class="num">Alíc. IVA</th><th class="num">Subtotal c/IVA</th></tr>`
+    : `<tr><th>Código</th><th>Producto</th><th>U. medida</th><th class="num">P. Unit.</th><th class="num">% Bonif.</th><th class="num">Cant.</th><th class="num">Subtotal</th></tr>`;
 
   const condicionIvaEmisorLabel =
     CONDICION_IVA_LABEL[arcaConfig.condicionIvaEmisor] ?? arcaConfig.condicionIvaEmisor;
   const condicionIvaClienteLabel =
     CONDICION_IVA_LABEL[venta.cliente?.condicionIva ?? "CONSUMIDOR_FINAL"] ?? "Consumidor Final";
-  const codigoTipoCmp =
-    CODIGO_TIPO_COMPROBANTE[venta.tipoComprobante ?? "FACTURA_B"] ?? "";
+  const formaPagoLabel = FORMA_PAGO_LABEL[venta.formaPago] ?? venta.formaPago;
+  const condicionVenta = venta.formaPago === "CUENTA_CORRIENTE" ? "Crédito" : "Contado";
 
   const ETIQUETA_COPIA = ["ORIGINAL", "DUPLICADO", "TRIPLICADO"];
 
@@ -149,13 +232,13 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
         ? `<strong>Domicilio Comercial:</strong> ${escapeHtml(venta.cliente.domicilioComercial)}<br/>`
         : ""
     }
-    <strong>Condición de venta:</strong> Contado<br/>
-    <strong>Forma de pago:</strong> ${venta.formaPago} &nbsp;|&nbsp; <strong>Atendió:</strong> ${escapeHtml(venta.usuario.nombre)}
+    <strong>Condición de venta:</strong> ${condicionVenta}<br/>
+    <strong>Forma de pago:</strong> ${escapeHtml(formaPagoLabel)} &nbsp;|&nbsp; <strong>Atendió:</strong> ${escapeHtml(venta.usuario.nombre)}
   </div>
 
-  <table>
+  <table class="${discriminaIva ? "" : "sin-iva"}">
     <thead>
-      <tr><th>Código</th><th>Producto</th><th>U. medida</th><th class="num">P. Unit.</th><th class="num">% Bonif.</th><th class="num">Cant.</th><th class="num">Subtotal</th><th class="num">Alíc. IVA</th><th class="num">Subtotal c/IVA</th></tr>
+      ${encabezadoTabla}
     </thead>
     <tbody>
       ${filasItems}
@@ -164,8 +247,9 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
 
   <div class="totales">
     ${
-      Number(venta.descuento) > 0
-        ? `<div>Descuento: -${formatearMoneda(venta.descuento)}</div>`
+      descuento.greaterThan(0)
+        ? `<div>Subtotal: ${formatearMoneda(subtotalBruto)}</div>
+    <div>Descuento: -${formatearMoneda(descuento)}</div>`
         : ""
     }
     <div class="total">Total: ${formatearMoneda(venta.total)}</div>
@@ -175,9 +259,14 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
     <div class="pie-iva">
       ${desgloseIva.length > 0
         ? `<div class="iva-desglose">
-        <div class="iva-linea"><span>Importe Neto Gravado:</span><span>${formatearMoneda(desgloseIva.reduce((s, d) => s + d.baseImponible, 0))}</span></div>
+        <div class="iva-linea"><span>Importe Neto Gravado:</span><span>${formatearMoneda(
+          desgloseIva.reduce((s, d) => s.add(d.baseImponible), new Prisma.Decimal(0))
+        )}</span></div>
         ${desgloseIva
-          .map((d) => `<div class="iva-linea"><span>IVA ${d.alicuota}%:</span><span>${formatearMoneda(d.montoIva)}</span></div>`)
+          .map(
+            (d) =>
+              `<div class="iva-linea"><span>IVA ${d.alicuota}%:</span><span>${formatearMoneda(d.montoIva)}</span></div>`
+          )
           .join("")}
         <div class="iva-linea"><span>Importe Otros Tributos:</span><span>${formatearMoneda(0)}</span></div>
       </div>`
@@ -189,10 +278,10 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
         <strong>CAE:</strong> ${venta.cae ?? "-"}<br/>
         <strong>Vto. CAE:</strong> ${venta.caeVencimiento ? venta.caeVencimiento.toLocaleDateString("es-AR") : "-"}
       </div>
-      ${urlQr ? `<div style="text-align:right"><strong>QR ARCA</strong><br/><img class="qr-img" src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(urlQr)}" alt="QR ARCA" /></div>` : ""}
+      ${qrDataUrl ? `<div style="text-align:right"><strong>QR ARCA</strong><br/><img class="qr-img" src="${qrDataUrl}" alt="QR ARCA" /></div>` : ""}
     </div>
   </div>
-  </div>`).join("")
+  </div>`).join("");
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -299,6 +388,14 @@ export function generarHtmlComprobante(venta: VentaConDetalle, resultadoCAE?: Re
   th:nth-child(7), td:nth-child(7) { width: 12%; }
   th:nth-child(8), td:nth-child(8) { width: 9%; }
   th:nth-child(9), td:nth-child(9) { width: 14%; }
+  /* Tabla sin discriminar IVA (Factura C): 7 columnas repartidas al 100% */
+  table.sin-iva th:nth-child(1), table.sin-iva td:nth-child(1) { width: 10%; }
+  table.sin-iva th:nth-child(2), table.sin-iva td:nth-child(2) { width: 28%; }
+  table.sin-iva th:nth-child(3), table.sin-iva td:nth-child(3) { width: 12%; }
+  table.sin-iva th:nth-child(4), table.sin-iva td:nth-child(4) { width: 14%; }
+  table.sin-iva th:nth-child(5), table.sin-iva td:nth-child(5) { width: 10%; }
+  table.sin-iva th:nth-child(6), table.sin-iva td:nth-child(6) { width: 8%; }
+  table.sin-iva th:nth-child(7), table.sin-iva td:nth-child(7) { width: 18%; }
   .num { text-align: right; }
   .iva-desglose {
     font-size: 9pt;

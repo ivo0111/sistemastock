@@ -16,3 +16,7 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 *.wsb
+
+# Artefactos del instalador (Inno Setup): el .exe se genera en cada build,
+# no se versiona. Para publicarlo, subilo a una GitHub Release.
+installer/Output/

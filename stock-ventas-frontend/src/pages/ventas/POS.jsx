@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { get, post } from '../../api/client'
 import { useNavigate } from 'react-router-dom'
+import { mejorPromocionPara } from '../../utils/promociones'
 
 let nextLineId = 1
 
@@ -25,6 +26,7 @@ export default function POS() {
   const [clientes, setClientes] = useState([])
   const [clientesAbierto, setClientesAbierto] = useState(false)
   const [descuento, setDescuento] = useState(0)
+  const [promociones, setPromociones] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const searchRef = useRef(null)
@@ -36,6 +38,12 @@ export default function POS() {
       .then(r => setProductos(r.data || r || []))
       .catch(() => {})
   }, [busqueda])
+
+  useEffect(() => {
+    get('/promociones/activas')
+      .then(r => setPromociones(Array.isArray(r) ? r : []))
+      .catch(() => setPromociones([]))
+  }, [])
 
   useEffect(() => {
     if (!debouncedClientesBusqueda || !clientesAbierto) { setClientes([]); return }
@@ -126,15 +134,33 @@ export default function POS() {
     setCart(prev => prev.filter(item => item.lineId !== lineId))
   }
 
+  // Promoción vigente que aplica a esta línea (si hay varias, la mejor)
+  function promoDeItem(item) {
+    return mejorPromocionPara(promociones, item.productoId, item.cantidad)
+  }
+
+  // La bonificación real es la mayor entre la que puso el vendedor y la promo
+  // (misma regla que aplica el backend al confirmar).
+  function bonifEfectiva(item) {
+    const promo = promoDeItem(item)
+    return Math.max(item.bonificacion, promo?.bonificacion ?? 0)
+  }
+
   function cartItemSubtotal(item) {
-    return item.precioUnitario * item.cantidad * (1 - item.bonificacion / 100)
+    return item.precioUnitario * item.cantidad * (1 - bonifEfectiva(item) / 100)
   }
 
   const subtotal = cart.reduce((sum, item) => sum + cartItemSubtotal(item), 0)
   const total = Math.max(0, subtotal - Number(descuento))
+  const esCuentaCorriente = formaPago === 'cuenta_corriente'
+  const faltaCliente = esCuentaCorriente && !clienteId
 
   async function handleCheckout() {
     if (cart.length === 0) return
+    if (faltaCliente) {
+      setError('La venta a cuenta corriente necesita un cliente asociado. Elegí uno en "Cliente".')
+      return
+    }
     setError('')
     setSaving(true)
     try {
@@ -143,7 +169,7 @@ export default function POS() {
         items: cart.map(item => ({
           productoId: item.productoId,
           cantidad: item.cantidad,
-          bonificacion: item.bonificacion,
+          bonificacion: bonifEfectiva(item),
         })),
         formaPago: formaPago.toUpperCase(),
         descuento: Number(descuento),
@@ -206,6 +232,19 @@ export default function POS() {
                       -{item.bonificacion}%
                     </span>
                   )}
+                  {(() => {
+                    const promo = promoDeItem(item)
+                    if (!promo) return null
+                    return (
+                      <span
+                        className="badge badge-success"
+                        style={{ marginLeft: 6, fontSize: 11 }}
+                        title={`Promoción: ${promo.promocion.nombre}`}
+                      >
+                        Promo: -{promo.bonificacion}%
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div>
                   <button className="btn btn-sm btn-outline" onClick={() => updateQty(item.lineId, item.cantidad - 1)}>-</button>
@@ -239,7 +278,13 @@ export default function POS() {
             <option value="efectivo">Efectivo</option>
             <option value="tarjeta">Tarjeta</option>
             <option value="transferencia">Transferencia</option>
+            <option value="cuenta_corriente">Cuenta corriente (crédito)</option>
           </select>
+          {esCuentaCorriente && faltaCliente && (
+            <div className="text-sm" style={{ color: 'var(--danger)', marginTop: 4 }}>
+              Elegí un cliente: la deuda se registra en su cuenta corriente.
+            </div>
+          )}
         </div>
 
         <div className="form-group" style={{ position: 'relative' }} ref={clienteWrapperRef}>
@@ -303,7 +348,7 @@ export default function POS() {
         <button
           className="btn btn-success"
           style={{ width: '100%', padding: 12, fontSize: 16 }}
-          disabled={cart.length === 0 || saving}
+          disabled={cart.length === 0 || saving || faltaCliente}
           onClick={handleCheckout}
         >
           {saving ? 'Procesando...' : `Confirmar Venta ($${total.toFixed(2)})`}

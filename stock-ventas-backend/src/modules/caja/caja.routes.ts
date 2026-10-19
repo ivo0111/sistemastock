@@ -12,7 +12,8 @@ router.use(requireAuth);
 router.get(
   "/actual",
   asyncHandler(async (req, res) => {
-    const estado = await service.obtenerEstadoActual();
+    // La caja "actual" es la del usuario que pregunta (una por cajero).
+    const estado = await service.obtenerEstadoActual(req.auth!.id);
     res.json(estado);
   })
 );
@@ -32,13 +33,18 @@ router.post(
 
 const cierreSchema = z.object({
   montoFinalContado: z.number().nonnegative(),
+  // Opcional: solo ADMIN puede indicar una caja que no es suya para cerrarla.
+  cajaId: z.number().int().positive().optional(),
 });
 
 router.post(
   "/cierre",
   asyncHandler(async (req, res) => {
-    const { montoFinalContado } = cierreSchema.parse(req.body);
-    const caja = await service.cerrarCaja(req.auth!.id, montoFinalContado);
+    const { montoFinalContado, cajaId } = cierreSchema.parse(req.body);
+    const caja = await service.cerrarCaja(req.auth!.id, montoFinalContado, {
+      cajaId,
+      esAdmin: req.auth!.rol === "ADMIN",
+    });
     res.json(caja);
   })
 );

@@ -76,6 +76,11 @@ export default function Layout() {
           <NavLink to="/clientes" className="sidebar-link">
             Clientes
           </NavLink>
+          {isAdmin && (
+            <NavLink to="/promociones" className="sidebar-link">
+              Promociones
+            </NavLink>
+          )}
           <NavLink to="/caja" className="sidebar-link">
             Caja
           </NavLink>
