@@ -46,11 +46,14 @@ export default function POS() {
       .catch(() => setPromociones([]))
   }, [])
 
+  // Se re-cruza cada vez que se elige EFECTIVO: si el usuario abre la caja
+  // desde otra vista (Caja → Abrir caja) y vuelve al POS, queda con el dato fresco.
   useEffect(() => {
+    if (formaPago !== 'efectivo') return
     get('/caja/actual')
       .then(r => setCajaAbierta(Boolean(r?.abierta)))
       .catch(() => setCajaAbierta(null))
-  }, [])
+  }, [formaPago])
 
   useEffect(() => {
     if (!debouncedClientesBusqueda || !clientesAbierto) { setClientes([]); return }

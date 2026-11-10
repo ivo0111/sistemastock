@@ -5,10 +5,16 @@
     los archivos del proyecto. Se puede correr también a mano (fuera del
     instalador) para debug:
 
+        $env:PG_PASSWORD = "miclave"
         powershell -ExecutionPolicy Bypass -File postinstall.ps1 `
-            -AppDir "C:\SistemaStock" -PgUser postgres -PgPassword "miclave" -PgPort 5432 `
+            -AppDir "C:\SistemaStock" -PgUser postgres -PgPort 5432 `
             -ArcaCondicionIva MONOTRIBUTO -ArcaRazonSocial "Mi Empresa" -ArcaCuit "20123456789" `
             -ArcaPuntoVenta 1 -ArcaDomicilio "Calle 123" -ArcaIngresosBrutos "1234" -ArcaFechaInicio "01/01/2020"
+
+    La contraseña de PostgreSQL se pasa por la variable de entorno PG_PASSWORD,
+    NO por línea de comandos (queda expuesta en procesos visibles a otros
+    usuarios). El instalador la define él mismo desde la página de datos de
+    PostgreSQL.
 
     Códigos de salida (Inno Setup los interpreta después de correr esto):
         0  → todo OK
@@ -28,7 +34,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$AppDir,
     [Parameter(Mandatory = $true)][string]$PgUser,
-    [Parameter(Mandatory = $true)][string]$PgPassword,
     [Parameter(Mandatory = $true)][string]$PgPort,
     [string]$ArcaCondicionIva = 'MONOTRIBUTO',
     [string]$ArcaRazonSocial = 'Mi Empresa',
@@ -69,6 +74,18 @@ $logPath = Join-Path $AppDir "installer\install-log.txt"
 try { Start-Transcript -Path $logPath -Append -Force | Out-Null } catch {}
 
 try {
+    # ────────────────────────────────────────────────────────────
+    # 0) Resolver la contraseña de PostgreSQL desde la variables de
+    #    entorno PG_PASSWORD (el instalador la define desde su página)
+    # ────────────────────────────────────────────────────────────
+    $PgPassword = $env:PG_PASSWORD
+    if (-not $PgPassword) {
+        Write-Err "Falta la variable de entorno PG_PASSWORD (el instalador la define automáticamente)."
+        Write-Err "Si corrés este script a mano, definila primero: `$env:PG_PASSWORD = 'tu-clave'"
+        $exitCode = 30
+        throw "PG_PASSWORD no está definida."
+    }
+
     # ────────────────────────────────────────────────────────────
     # 1) Node.js: verificar, instalar si falta
     # ────────────────────────────────────────────────────────────
@@ -239,9 +256,11 @@ ARCA_KEY_PATH=
         Write-Host ""
         Write-Host "Revisá la salida de npm de arriba. Posibles causas:" -ForegroundColor Yellow
         Write-Host "  - Sin conexión a internet"
-        Write-Host "  - Puppeteer no pudo descargar Chromium (requiere conexión)"
+        Write-Host "  - Error de red al descargar dependencias o el cliente de Prisma"
         Write-Host "  - Espacio en disco insuficiente"
-        Pop-Location
+        Write-Host "  (El PDF no se descarga: Puppeteer usa Chrome/Edge del sistema. Si falla"
+        Write-Host "   la generación de comprobantes, el error real es PDF_NO_DISPONIBLE: ver INSTALACION.md)"
+Pop-Location
         $exitCode = 30
         throw "npm install falló en el backend."
     }

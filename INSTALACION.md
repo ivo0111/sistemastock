@@ -135,3 +135,34 @@ instalacion. Los errores mas comunes son:
 - Sin conexion a internet: el instalador necesita internet para descargar
   Node.js si no lo tenes.
 - Espacio en disco insuficiente.
+
+**El instalador falla en `npm install` del frontend (paquete `xlsx`).**
+El paquete `xlsx` se descarga desde el CDN de SheetJS (`https://cdn.sheetjs.com`),
+no del registry publico de npm. Si ese dominio no responde (o tu red / proxy lo
+bloquea), la instalacion falla y el frontend no queda compilado. El sistema en
+si no usa ese CDN en tiempo de ejecucion, solo al instalar. Solucion: revisá la
+conexion e intentá de nuevo; si el dominio sigue sin responder, instalá las
+dependencias a mano (`cd stock-ventas-frontend` y `npm install`) y volvé a correr
+el instalador.
+
+**La generacion de comprobantes (PDF) falla con "PDF_NO_DISPONIBLE".**
+El sistema NO descarga Chromium (ya no lo hace): usa el Chrome o Edge que ya
+tenes en la maquina. Si no encuentra ninguno, el PDF falla con el error
+`PDF_NO_DISPONIBLE`. Solucion: instalá Chrome o Microsoft Edge (Edge viene con
+Windows 10/11), o indicá la ruta del navegador en `stock-ventas-backend\.env`:
+`PDF_BROWSER_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe`
+
+---
+
+## 5. Copias de seguridad (backups)
+
+El sistema guarda toda la informacion (ventas, stock, cuentas corriente, caja) en
+PostgreSQL en tu equipo. Para no perderla si la maquina falla, respalda la base
+periodicamente con:
+
+`powershell
+powershell -ExecutionPolicy Bypass -File scripts\backup_base_datos.ps1`n
+El script deja los respaldos (archivos .dump) en `stock-ventas-backend\backups\`
+y automaticamente conserva solo los ultimos 30 dias. Para programarlo una vez por
+d�a en Windows (como Administrador), ver la seccion 'Backups automaticamente' en
+la documentacion del proyecto.

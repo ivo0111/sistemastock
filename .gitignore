@@ -20,3 +20,6 @@ Thumbs.db
 # Artefactos del instalador (Inno Setup): el .exe se genera en cada build,
 # no se versiona. Para publicarlo, subilo a una GitHub Release.
 installer/Output/
+
+# Respaldos de la base de datos generados por scripts/backup_base_datos.ps1
+stock-ventas-backend/backups/

@@ -67,7 +67,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 ; para que el usuario vea el progreso de npm install / migraciones, que
 ; puede tardar varios minutos.
 Filename: "powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\postinstall.ps1"" -AppDir ""{app}"" -PgUser ""{code:GetPgUser}"" -PgPassword ""{code:GetPgPassword}"" -PgPort ""{code:GetPgPort}"" -ArcaCondicionIva ""{code:GetArcaCondicionIva}"" -ArcaRazonSocial ""{code:GetArcaRazonSocial}"" -ArcaCuit ""{code:GetArcaCuit}"" -ArcaPuntoVenta ""{code:GetArcaPuntoVenta}"" -ArcaDomicilio ""{code:GetArcaDomicilio}"" -ArcaIngresosBrutos ""{code:GetArcaIngresosBrutos}"" -ArcaFechaInicio ""{code:GetArcaFechaInicio}"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\postinstall.ps1"" -AppDir ""{app}"" -PgUser ""{code:GetPgUser}"" -PgPort ""{code:GetPgPort}"" -ArcaCondicionIva ""{code:GetArcaCondicionIva}"" -ArcaRazonSocial ""{code:GetArcaRazonSocial}"" -ArcaCuit ""{code:GetArcaCuit}"" -ArcaPuntoVenta ""{code:GetArcaPuntoVenta}"" -ArcaDomicilio ""{code:GetArcaDomicilio}"" -ArcaIngresosBrutos ""{code:GetArcaIngresosBrutos}"" -ArcaFechaInicio ""{code:GetArcaFechaInicio}"""; \
     StatusMsg: "Configurando el sistema (esto puede tardar varios minutos)..."; \
     Flags: waituntilterminated
 
@@ -141,9 +141,17 @@ begin
   Result := PgPage.Values[0];
 end;
 
-function GetPgPassword(Param: string): string;
+(* La contraseña de PostgreSQL se pasa a postinstall.ps1 por la variable de
+   entorno PG_PASSWORD (los procesos hijos heredan el entorno del setup) en
+   vez de la línea de comandos, para no dejarla visible en el listado de
+   procesos. *)
+function SetEnvironmentVariable(lpName, lpValue: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  Result := PgPage.Values[1];
+  SetEnvironmentVariable('PG_PASSWORD', PgPage.Values[1]);
+  Result := '';
 end;
 
 function GetPgPort(Param: string): string;

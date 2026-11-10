@@ -226,7 +226,7 @@ export async function generarHtmlComprobante(
   </div>
 
   <div class="datos-cliente">
-    <strong>Fecha:</strong> ${venta.fecha.toLocaleString("es-AR")}<br/>
+    <strong>Fecha:</strong> ${venta.fecha.toLocaleString("es-AR", { timeZone: TZ_NEGOCIO })}<br/>
     <strong>Cliente:</strong> ${escapeHtml(venta.cliente?.nombre ?? "Consumidor Final")}${
       venta.cliente?.cuit ? ` — CUIT/CUIL: ${escapeHtml(venta.cliente.cuit)}` : ""
     }<br/>
@@ -280,7 +280,7 @@ export async function generarHtmlComprobante(
     <div class="pie">
       <div>
         <strong>CAE:</strong> ${venta.cae ?? "-"}<br/>
-        <strong>Vto. CAE:</strong> ${venta.caeVencimiento ? venta.caeVencimiento.toLocaleDateString("es-AR") : "-"}
+        <strong>Vto. CAE:</strong> ${venta.caeVencimiento ? venta.caeVencimiento.toLocaleDateString("es-AR", { timeZone: TZ_NEGOCIO }) : "-"}
       </div>
       ${qrDataUrl ? `<div style="text-align:right"><strong>QR ARCA</strong><br/><img class="qr-img" src="${qrDataUrl}" alt="QR ARCA" /></div>` : ""}
     </div>
