@@ -59,6 +59,12 @@ export async function crearClienteTest(nombre = "Cliente test") {
   return prisma.cliente.create({ data: { nombre } });
 }
 
+// Vender en efectivo (y registrar cobros PAGO) exige turno de caja abierto:
+// este helper lo simula sin pasar por el service.
+export async function crearCajaAbiertaTest(usuarioId: number, montoInicial = 0) {
+  return prisma.caja.create({ data: { usuarioId, montoInicial } });
+}
+
 // Assert de rechazo: valida que la promesa falle con un AppError del código
 // esperado (si no falla, el test falla con un mensaje claro).
 export async function rechazarCon(code: string, fn: () => Promise<unknown>) {

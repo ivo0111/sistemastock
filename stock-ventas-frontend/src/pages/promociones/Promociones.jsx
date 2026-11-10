@@ -30,9 +30,12 @@ function detallePromo(p) {
   return `${Number(p.valor)}% de descuento`
 }
 
+// AAAA-MM-DD en la zona del negocio: toISOString() usa UTC y a las 21:00 ya
+// es "mañana" (fechaFin se guarda como fin del día local = 02:59 UTC del día
+// siguiente), así que el input de fecha se desfasaba un día.
 function aInputDate(iso) {
   if (!iso) return ''
-  return new Date(iso).toISOString().slice(0, 10)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(iso))
 }
 
 export default function Promociones() {
@@ -101,8 +104,10 @@ export default function Promociones() {
       valor: form.tipo === 'DOS_POR_UNO' ? 0 : Number(form.valor),
       cantidadMinima: Number(form.cantidadMinima) || 1,
       activo: form.activo,
-      fechaInicio: form.fechaInicio ? new Date(form.fechaInicio).toISOString() : null,
-      fechaFin: form.fechaFin ? new Date(form.fechaFin).toISOString() : null,
+      // YYYY-MM-DD tal cual sale del input: el backend lo interpreta como día
+      // en hora Argentina (no como 00:00 UTC).
+      fechaInicio: form.fechaInicio || null,
+      fechaFin: form.fechaFin || null,
     }
     setGuardando(true)
     try {

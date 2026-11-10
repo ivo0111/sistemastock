@@ -142,6 +142,23 @@ export async function ajustarCuentaCorriente(
   }
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Un PAGO es un cobro: la plata entra a una caja. Registrarlo sin caja
+    // abierta deja el cobro fuera de cualquier turno, y aunque el movimiento
+    // todavía no se imputa a la caja, al menos se exige tener una abierta.
+    if (tipo === "PAGO") {
+      const cajaAbierta = await tx.caja.findFirst({
+        where: { usuarioId, fechaCierre: null },
+        select: { id: true },
+      });
+      if (!cajaAbierta) {
+        throw new AppError(
+          "CAJA_NO_ABIERTA",
+          "Para registrar un cobro (PAGO) hay que abrir caja primero (Caja → Abrir caja)",
+          409
+        );
+      }
+    }
+
     await tx.movimientoCuentaCorriente.create({
       data: {
         clienteId: id,

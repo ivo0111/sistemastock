@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import QRCode from "qrcode";
 import { arcaConfig } from "../../config/arca.config";
+import { TZ_NEGOCIO } from "../../utils/fechas";
 import { ResultadoCAE } from "../arca/arca.types";
 import { CONDICION_IVA_LABEL, CODIGO_TIPO_COMPROBANTE } from "./arca.labels";
 
@@ -66,7 +67,7 @@ function calcularDesgloseIva(
   const subtotalTotal = items.reduce((suma, item) => suma.add(item.subtotal), new Prisma.Decimal(0));
   if (subtotalTotal.isZero()) return [];
 
-  const map = new Map<number, { baseImponible: Prisma.Decimal; montoIva: Prisma.Decimal }>();
+  const map = new Map<number, { baseImponible: Prisma.Decimal; totalNeto: Prisma.Decimal }>();
 
   for (const item of items) {
     const alicuota = Number(item.producto.alicuotaIva ?? 21);
@@ -78,16 +79,14 @@ function calcularDesgloseIva(
 
     const divisor = new Prisma.Decimal(1).add(new Prisma.Decimal(alicuota).div(100));
     const baseImponible = redondear2(subtotalNeto.div(divisor));
-    // El IVA es el resto: base + IVA == subtotalNeto exactamente (sin sobrantes)
-    const montoIva = subtotalNeto.sub(baseImponible);
 
     const acumulado = map.get(alicuota) ?? {
       baseImponible: new Prisma.Decimal(0),
-      montoIva: new Prisma.Decimal(0),
+      totalNeto: new Prisma.Decimal(0),
     };
     map.set(alicuota, {
       baseImponible: acumulado.baseImponible.add(baseImponible),
-      montoIva: acumulado.montoIva.add(montoIva),
+      totalNeto: acumulado.totalNeto.add(subtotalNeto),
     });
   }
 
@@ -96,7 +95,10 @@ function calcularDesgloseIva(
     .map(([alicuota, vals]) => ({
       alicuota,
       baseImponible: vals.baseImponible,
-      montoIva: vals.montoIva,
+      // El IVA se calcula por alícuota (total del grupo − base redondeada),
+      // no por ítem: el resto por ítem acumulaba centavos sueltos y el
+      // desglose mostrado podía no cuadrar con el total de la venta.
+      montoIva: redondear2(vals.totalNeto.sub(vals.baseImponible)),
     }));
 }
 
@@ -111,7 +113,9 @@ function armarUrlQrArca(venta: VentaConDetalle): string | null {
 
   const payload = {
     ver: 1,
-    fecha: venta.fecha.toISOString().slice(0, 10),
+    // Día del negocio en hora Argentina: toISOString() usa UTC y una venta de
+    // las 21:30 llevaba la fecha del día siguiente en el QR fiscal.
+    fecha: new Intl.DateTimeFormat("en-CA", { timeZone: TZ_NEGOCIO }).format(venta.fecha),
     cuit: Number(arcaConfig.cuitEmisor || 0),
     ptoVta: venta.puntoVenta,
     tipoCmp: Number(codigoTipoCmp),

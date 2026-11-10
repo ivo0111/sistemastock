@@ -222,6 +222,12 @@ model Venta {
 
   @@index([fecha])
   @@index([estado])
+  // Red de seguridad de la numeración fiscal: aunque el lock de fila evita
+  // correlativos repetidos en el camino feliz, la BD no permite que dos
+  // comprobantes del mismo tipo y punto de venta se cuelen con el mismo número.
+  // (Columnas nullable: en Postgres las claves únicas no compiten con NULL,
+  // así que las ventas sin comprobante no chocan entre sí.)
+  @@unique([puntoVenta, tipoComprobante, numeroComprobante])
   @@map("ventas")
 }
 

@@ -48,6 +48,25 @@ export async function crearVenta(input: CrearVentaInput) {
   // Toda la operación es una única transacción: si falla el stock de cualquier
   // ítem, se revierte todo (no queda una venta a medio confirmar).
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Caja abierta del usuario que registra la venta: se resuelve al inicio,
+    // se usa para imputar la venta y para exigirla cuando cobra en efectivo.
+    const cajaAbierta = await tx.caja.findFirst({
+      where: { usuarioId: input.usuarioId, fechaCierre: null },
+      select: { id: true },
+    });
+
+    // Cobrar en efectivo sin caja abierta deja el dinero fuera de todo turno:
+    // el cierre de cualquier caja saldría "de menos" y la venta quedaría con
+    // cajaId NULL, sin sumar en ningún resumen. Se exige caja abierta.
+    // Tarjeta, transferencia y cuenta corriente no mueven plata de caja.
+    if (input.formaPago === FormaPago.EFECTIVO && !cajaAbierta) {
+      throw new AppError(
+        "CAJA_NO_ABIERTA",
+        "Para vender en efectivo hay que abrir caja primero (Caja → Abrir caja)",
+        409
+      );
+    }
+
     // Validar que el cliente exista antes de tocar stock: si no, la FK de
     // `ventas.cliente_id` revienta recién en el create y termina en 500.
     if (input.clienteId !== undefined) {
@@ -164,13 +183,8 @@ export async function crearVenta(input: CrearVentaInput) {
     }
     total = total.sub(descuento);
 
-    // La venta queda imputada a la caja abierta del usuario que la registra
-    // (null si no tiene caja abierta: p. ej. un admin sin turno de caja).
-    const cajaAbierta = await tx.caja.findFirst({
-      where: { usuarioId: input.usuarioId, fechaCierre: null },
-      select: { id: true },
-    });
-
+    // La venta queda imputada a la caja abierta del usuario (null solo para
+    // formas de pago que no mueven efectivo, p. ej. un admin sin turno).
     const venta = await tx.venta.create({
       data: {
         clienteId: input.clienteId,
@@ -360,13 +374,14 @@ export async function anularVenta(id: number, motivo: string, usuarioId: number)
     const venta = await tx.venta.findUniqueOrThrow({ where: { id } });
 
     // Si la venta fue a cuenta corriente, se revierte el cargo: la deuda del
-    // cliente baja exactamente lo que había subido.
+    // cliente baja exactamente lo que había subido. Es un AJUSTE, no un PAGO:
+    // el cliente no pagó nada, se anula la venta.
     if (venta.formaPago === FormaPago.CUENTA_CORRIENTE && venta.clienteId !== null) {
       const montoRevertido = venta.total.neg();
       await tx.movimientoCuentaCorriente.create({
         data: {
           clienteId: venta.clienteId,
-          tipo: TipoMovimientoCuentaCorriente.PAGO,
+          tipo: TipoMovimientoCuentaCorriente.AJUSTE,
           monto: montoRevertido,
           usuarioId,
           referenciaTipo: "venta",

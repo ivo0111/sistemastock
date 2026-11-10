@@ -4,6 +4,7 @@ import { prisma } from "../src/lib/prisma";
 import { AppError } from "../src/utils/AppError";
 import { anularVenta, crearVenta } from "../src/modules/ventas/ventas.service";
 import {
+  crearCajaAbiertaTest,
   crearProductoTest,
   crearUsuarioTest,
   limpiarBase,
@@ -15,6 +16,7 @@ beforeAll(limpiarBase);
 describe("crearVenta", () => {
   it("descuenta stock, registra movimientos y calcula el total", async () => {
     const usuario = await crearUsuarioTest();
+    const caja = await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ precioVenta: 200, stockActual: 10 });
 
     const venta = await crearVenta({
@@ -26,6 +28,7 @@ describe("crearVenta", () => {
     // 200 * 2 * 0.90 = 360
     expect(Number(venta.total)).toBe(360);
     expect(venta.estado).toBe(EstadoVenta.CONFIRMADA);
+    expect(venta.cajaId).toBe(caja.id);
     expect(venta.items).toHaveLength(1);
     expect(Number(venta.items[0].subtotal)).toBe(360);
     expect(Number(venta.items[0].bonificacionPorcentaje)).toBe(10);
@@ -42,6 +45,7 @@ describe("crearVenta", () => {
 
   it("aplica el descuento global sobre el total", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ precioVenta: 400, stockActual: 5 });
 
     const venta = await crearVenta({
@@ -57,6 +61,7 @@ describe("crearVenta", () => {
 
   it("rechaza la venta sin stock suficiente sin modificar nada", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ stockActual: 1 });
 
     await rechazarCon("STOCK_INSUFICIENTE", () =>
@@ -76,6 +81,7 @@ describe("crearVenta", () => {
 
   it("rechaza un descuento mayor al subtotal", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ precioVenta: 100, stockActual: 5 });
 
     await rechazarCon("DESCUENTO_INVALIDO", () =>
@@ -90,6 +96,7 @@ describe("crearVenta", () => {
 
   it("no permite vender un producto inactivo", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ activo: false });
 
     await rechazarCon("PRODUCTO_INACTIVO", () =>
@@ -114,8 +121,40 @@ describe("crearVenta", () => {
     );
   });
 
+  it("rechaza la venta en efectivo sin caja abierta", async () => {
+    const usuario = await crearUsuarioTest();
+    const producto = await crearProductoTest({ stockActual: 5 });
+
+    await rechazarCon("CAJA_NO_ABIERTA", () =>
+      crearVenta({
+        items: [{ productoId: producto.id, cantidad: 1 }],
+        formaPago: FormaPago.EFECTIVO,
+        usuarioId: usuario.id,
+      })
+    );
+
+    // No se tocó el stock ni se registró la venta
+    const sigue = await prisma.producto.findUnique({ where: { id: producto.id } });
+    expect(sigue?.stockActual).toBe(5);
+    expect(await prisma.venta.count({ where: { usuarioId: usuario.id } })).toBe(0);
+  });
+
+  it("permite vender sin caja abierta cuando no es en efectivo", async () => {
+    const usuario = await crearUsuarioTest();
+    const producto = await crearProductoTest({ stockActual: 5 });
+
+    const venta = await crearVenta({
+      items: [{ productoId: producto.id, cantidad: 1 }],
+      formaPago: FormaPago.TARJETA,
+      usuarioId: usuario.id,
+    });
+
+    expect(venta.cajaId).toBeNull();
+  });
+
   it("con stock acotado, ventas concurrentes no sobre-venden", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ stockActual: 3 });
 
     const resultados = await Promise.allSettled(
@@ -151,6 +190,7 @@ describe("crearVenta", () => {
 describe("anularVenta", () => {
   it("revierte stock y marca la venta como anulada", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ stockActual: 10 });
 
     const venta = await crearVenta({
@@ -175,6 +215,7 @@ describe("anularVenta", () => {
 
   it("no permite anular dos veces (no duplica la devolución)", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const producto = await crearProductoTest({ stockActual: 10 });
 
     const venta = await crearVenta({

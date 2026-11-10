@@ -4,6 +4,7 @@ import { prisma } from "../src/lib/prisma";
 import { ajustarCuentaCorriente } from "../src/modules/clientes/clientes.service";
 import { anularVenta, crearVenta } from "../src/modules/ventas/ventas.service";
 import {
+  crearCajaAbiertaTest,
   crearClienteTest,
   crearProductoTest,
   crearUsuarioTest,
@@ -56,10 +57,18 @@ describe("venta a cuenta corriente", () => {
 
     expect(await saldoDe(cliente.id)).toBe(0);
 
+    // La anulación revierte el cargo como AJUSTE (no como PAGO: el cliente
+    // no pagó nada, se anuló la venta).
     const reversion = await prisma.movimientoCuentaCorriente.findFirst({
-      where: { clienteId: cliente.id, tipo: TipoMovimientoCuentaCorriente.PAGO },
+      where: { clienteId: cliente.id, tipo: TipoMovimientoCuentaCorriente.AJUSTE },
     });
     expect(Number(reversion?.monto)).toBe(-600);
+    expect(reversion?.motivo).toBe(`Anulación de venta #${venta.id}`);
+
+    const pagos = await prisma.movimientoCuentaCorriente.count({
+      where: { clienteId: cliente.id, tipo: TipoMovimientoCuentaCorriente.PAGO },
+    });
+    expect(pagos).toBe(0);
   });
 });
 
@@ -88,6 +97,7 @@ describe("ajustarCuentaCorriente", () => {
 
   it("aplica un PAGO negativo y reduce la deuda", async () => {
     const usuario = await crearUsuarioTest();
+    await crearCajaAbiertaTest(usuario.id);
     const cliente = await crearClienteTest();
 
     await ajustarCuentaCorriente(cliente.id, -500, "Pago en efectivo", usuario.id, "PAGO");
@@ -100,5 +110,25 @@ describe("ajustarCuentaCorriente", () => {
     expect(movimiento?.tipo).toBe(TipoMovimientoCuentaCorriente.PAGO);
     expect(Number(movimiento?.monto)).toBe(-500);
     expect(movimiento?.motivo).toBe("Pago en efectivo");
+  });
+
+  it("un PAGO sin caja abierta se rechaza", async () => {
+    const usuario = await crearUsuarioTest();
+    const cliente = await crearClienteTest();
+
+    await rechazarCon("CAJA_NO_ABIERTA", () =>
+      ajustarCuentaCorriente(cliente.id, -500, "Cobro sin caja", usuario.id, "PAGO")
+    );
+
+    expect(await saldoDe(cliente.id)).toBe(0);
+  });
+
+  it("un AJUSTE no exige caja abierta", async () => {
+    const usuario = await crearUsuarioTest();
+    const cliente = await crearClienteTest();
+
+    await ajustarCuentaCorriente(cliente.id, 100, "Saldo de apertura", usuario.id, "AJUSTE");
+
+    expect(await saldoDe(cliente.id)).toBe(100);
   });
 });

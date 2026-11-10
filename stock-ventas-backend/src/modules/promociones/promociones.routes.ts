@@ -3,6 +3,7 @@ import { z } from "zod";
 import { TipoPromocion } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { requireAuth, requireRole } from "../../middleware/auth";
+import { zFechaDesde, zFechaHasta } from "../../utils/fechas";
 import * as service from "./promociones.service";
 
 const router = Router();
@@ -16,8 +17,11 @@ const promocionBaseSchema = z.object({
   valor: z.number().min(0).max(100),
   cantidadMinima: z.number().int().min(1).optional(),
   activo: z.boolean().optional(),
-  fechaInicio: z.coerce.date().nullable().optional(),
-  fechaFin: z.coerce.date().nullable().optional(),
+  // Fechas como día del negocio (YYYY-MM-DD, hora Argentina). z.coerce.date()
+  // las interpretaba como 00:00 UTC, y un "válido hasta el 12" terminaba a las
+  // 21:00 del 11 (día corrido en el POS y en la grilla).
+  fechaInicio: zFechaDesde.nullable().optional(),
+  fechaFin: zFechaHasta.nullable().optional(),
 });
 
 const promocionSchema = promocionBaseSchema

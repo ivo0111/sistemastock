@@ -44,7 +44,7 @@ function encontrarNavegador(): string | null {
 
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = (async () => {
+    const promesa = (async () => {
       // Import perezoso: puppeteer-core solo se carga cuando alguien pide un PDF.
       const puppeteer = await import("puppeteer-core");
       const executablePath = encontrarNavegador();
@@ -56,16 +56,26 @@ async function getBrowser(): Promise<Browser> {
           503
         );
       }
-      return puppeteer.launch({
+      const browser = await puppeteer.launch({
         headless: true,
         executablePath,
         args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
       });
+      // Si el navegador se cae o se cierra solo, el cacheo se invalida: sin
+      // esto, browserPromise quedaba apuntando a un browser muerto para
+      // siempre y todos los PDF fallaban hasta reiniciar el servidor.
+      // El chequeo `=== promesa` evita que el evento de un browser viejo
+      // pise la conexión recién establecida.
+      browser.on("disconnected", () => {
+        if (browserPromise === promesa) browserPromise = null;
+      });
+      return browser;
     })().catch((err) => {
       // Si falló, el próximo intento vuelve a probar (no cachear el error).
       browserPromise = null;
       throw err;
     });
+    browserPromise = promesa;
   }
   return browserPromise;
 }

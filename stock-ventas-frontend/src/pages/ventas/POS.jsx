@@ -27,6 +27,7 @@ export default function POS() {
   const [clientesAbierto, setClientesAbierto] = useState(false)
   const [descuento, setDescuento] = useState(0)
   const [promociones, setPromociones] = useState([])
+  const [cajaAbierta, setCajaAbierta] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const searchRef = useRef(null)
@@ -43,6 +44,12 @@ export default function POS() {
     get('/promociones/activas')
       .then(r => setPromociones(Array.isArray(r) ? r : []))
       .catch(() => setPromociones([]))
+  }, [])
+
+  useEffect(() => {
+    get('/caja/actual')
+      .then(r => setCajaAbierta(Boolean(r?.abierta)))
+      .catch(() => setCajaAbierta(null))
   }, [])
 
   useEffect(() => {
@@ -154,11 +161,19 @@ export default function POS() {
   const total = Math.max(0, subtotal - Number(descuento))
   const esCuentaCorriente = formaPago === 'cuenta_corriente'
   const faltaCliente = esCuentaCorriente && !clienteId
+  // Efectivo sin caja abierta: la venta quedaría fuera de todo turno de caja
+  // (el backend la rechaza; acá se avisa antes de confirmar).
+  const esEfectivo = formaPago === 'efectivo'
+  const faltaCaja = esEfectivo && cajaAbierta === false
 
   async function handleCheckout() {
     if (cart.length === 0) return
     if (faltaCliente) {
       setError('La venta a cuenta corriente necesita un cliente asociado. Elegí uno en "Cliente".')
+      return
+    }
+    if (faltaCaja) {
+      setError('Para cobrar en efectivo hay que abrir caja primero (menú Caja → Abrir caja).')
       return
     }
     setError('')
@@ -285,6 +300,11 @@ export default function POS() {
               Elegí un cliente: la deuda se registra en su cuenta corriente.
             </div>
           )}
+          {faltaCaja && (
+            <div className="text-sm" style={{ color: 'var(--danger)', marginTop: 4 }}>
+              Sin caja abierta no se puede cobrar en efectivo: abrí caja para continuar.
+            </div>
+          )}
         </div>
 
         <div className="form-group" style={{ position: 'relative' }} ref={clienteWrapperRef}>
@@ -348,7 +368,7 @@ export default function POS() {
         <button
           className="btn btn-success"
           style={{ width: '100%', padding: 12, fontSize: 16 }}
-          disabled={cart.length === 0 || saving || faltaCliente}
+          disabled={cart.length === 0 || saving || faltaCliente || faltaCaja}
           onClick={handleCheckout}
         >
           {saving ? 'Procesando...' : `Confirmar Venta ($${total.toFixed(2)})`}
