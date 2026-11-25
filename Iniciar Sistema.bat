@@ -3,15 +3,66 @@ setlocal enabledelayedexpansion
 title Sistema Stock - Panel de Control
 cd /d "%~dp0"
 
+set "SERVICE_NAME=SistemaStock"
+set "APP_URL=http://localhost:3000"
+set "HEALTH_URL=%APP_URL%/api/v1/health"
+set "HEALTH_FILE=%TEMP%\stockcheck.txt"
+
 echo ============================================
 echo   Sistema de Gestion de Stock y Ventas
-echo   Iniciando...
 echo ============================================
 echo.
 
 REM ────────────────────────────────────────────
-REM 0) Verificar Node.js y node_modules
+REM 0) Camino rapido: si el backend ya responde
+REM    (servicio de Windows o ventana previa),
+REM    solo abrir el navegador.
 REM ────────────────────────────────────────────
+call :check_health
+if "!HEALTH!"=="200" (
+    echo El sistema ya esta corriendo en %APP_URL%
+    start "" "%APP_URL%"
+    timeout /t 2 /nobreak >nul
+    exit /b 0
+)
+
+REM ────────────────────────────────────────────
+REM 1) Si el backend esta instalado como
+REM    servicio, iniciarlo y esperar. No se
+REM    compila ni se ejecuta Prisma.
+REM ────────────────────────────────────────────
+sc query "%SERVICE_NAME%" >nul 2>nul
+if errorlevel 1 goto :manual
+
+call :service_state
+if /i "!SERVICE_STATE!"=="Running" (
+    echo El servicio "%SERVICE_NAME%" ya esta iniciado.
+    goto :wait_service
+)
+if /i "!SERVICE_STATE!"=="StartPending" (
+    echo El servicio "%SERVICE_NAME%" esta iniciando...
+    goto :wait_service
+)
+
+echo [1/2] Iniciando servicio "%SERVICE_NAME%"...
+net start "%SERVICE_NAME%" >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo No se pudo iniciar el servicio ^(puede requerir permisos de Administrador^).
+    echo Se intentara iniciar el backend en modo manual...
+    echo.
+    goto :manual
+)
+echo [2/2] Servicio iniciado.
+goto :wait_service
+
+REM ────────────────────────────────────────────
+REM Modo manual: verificar Node, PostgreSQL,
+REM migraciones pendientes y compilar solo si
+REM cambiaron las fuentes.
+REM ────────────────────────────────────────────
+:manual
+echo [1/5] Verificando Node.js y dependencias...
 where node >nul 2>nul
 if errorlevel 1 (
     echo ERROR: No se encontro Node.js. Instalalo desde https://nodejs.org y volve a ejecutar este archivo.
@@ -29,13 +80,9 @@ if not exist "stock-ventas-frontend\node_modules" (
     pause
     exit /b 1
 )
+echo.
 
-REM ────────────────────────────────────────────
-REM 1) Verificar/iniciar PostgreSQL
-REM    (misma logica que "npm run dev":
-REM     scripts/ensure-postgres.js)
-REM ────────────────────────────────────────────
-echo [1/5] Verificando PostgreSQL...
+echo [2/5] Verificando PostgreSQL...
 pushd stock-ventas-backend
 call node scripts\ensure-postgres.js
 if errorlevel 1 (
@@ -45,36 +92,13 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-popd
-echo.
 
-REM ────────────────────────────────────────────
-REM 2) Prisma: verificar duplicados de
-REM    comprobantes, generar cliente y aplicar
-REM    migraciones pendientes
-REM ────────────────────────────────────────────
-echo [2/5] Aplicando base de datos (Prisma)...
-pushd stock-ventas-backend
-call node scripts\verificar-duplicados-comprobantes.js
+echo.
+echo [3/5] Verificando base de datos y migraciones...
+call node scripts\preparar-arranque.js
 if errorlevel 1 (
     echo.
-    echo ERROR: hay comprobantes duplicados en la base. La migracion de
-    echo        numeracion fiscal se abortaria para no romper la integridad.
-    echo        Corregi o anula los comprobantes listados arriba y reintenta.
-    popd
-    pause
-    exit /b 1
-)
-call npx prisma generate >nul
-if errorlevel 1 (
-    echo ERROR: fallo "prisma generate". Revisa el error de arriba.
-    popd
-    pause
-    exit /b 1
-)
-call npx prisma migrate deploy
-if errorlevel 1 (
-    echo ERROR: fallo "prisma migrate deploy". Revisa el error de arriba.
+    echo No se pudo preparar la base de datos. Revisa el mensaje de arriba.
     popd
     pause
     exit /b 1
@@ -82,12 +106,7 @@ if errorlevel 1 (
 popd
 echo.
 
-REM ────────────────────────────────────────────
-REM 3) Compilar backend y frontend SOLO si
-REM    cambiaron las fuentes (hash/mtime).
-REM    Ver scripts\build-if-needed.js.
-REM ────────────────────────────────────────────
-echo [3/5] Compilando backend (solo si hubo cambios)...
+echo [4/5] Compilando backend (solo si hubo cambios)...
 call node "%~dp0scripts\build-if-needed.js" stock-ventas-backend
 if errorlevel 1 (
     echo ERROR: fallo la compilacion del backend. Revisa el error de arriba.
@@ -95,7 +114,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/5] Compilando frontend (solo si hubo cambios)...
+echo [5/5] Compilando frontend (solo si hubo cambios)...
 call node "%~dp0scripts\build-if-needed.js" stock-ventas-frontend
 if errorlevel 1 (
     echo ERROR: fallo la compilacion del frontend. Revisa el error de arriba.
@@ -104,27 +123,24 @@ if errorlevel 1 (
 )
 echo.
 
-REM ────────────────────────────────────────────
-REM 5) Levantar el backend (el mismo servidor
-REM    Express sirve la app en :3000), esperar
-REM    a que responda y abrir el navegador.
-REM ────────────────────────────────────────────
-echo [5/5] Levantando el sistema...
-start "Sistema Stock - Backend" /min cmd /c "cd /d "%~dp0stock-ventas-backend" && npm run start"
+echo Levantando el backend...
+start "Sistema Stock - Backend" /min /d "%~dp0stock-ventas-backend" cmd /c "node dist\server.js"
+goto :wait_manual
 
-set "READY=0"
-for /l %%i in (1,1,30) do (
-    curl -s -o nul -w "%%{http_code}" http://localhost:3000/api/v1/health > "%TEMP%\stockcheck.txt" 2>nul
-    set /p HTTP_CODE=<"%TEMP%\stockcheck.txt"
-    if "!HTTP_CODE!"=="200" (
-        set "READY=1"
-        goto :ready
-    )
-    timeout /t 1 /nobreak > nul
+:wait_service
+echo Esperando a que el servicio responda...
+call :wait_health
+if "!READY!"=="0" (
+    echo.
+    echo El servicio no respondio a tiempo.
+    echo Revisa los logs en %ProgramData%\SistemaStock\Logs
+    pause
+    exit /b 1
 )
-:ready
-del "%TEMP%\stockcheck.txt" >nul 2>nul
+goto :open_service
 
+:wait_manual
+call :wait_health
 if "!READY!"=="0" (
     echo.
     echo El backend no respondio a tiempo ^(30 segundos^).
@@ -132,24 +148,66 @@ if "!READY!"=="0" (
 ) else (
     echo   Sistema listo.
 )
+goto :open_manual
 
+:open_service
+echo   Sistema listo.
 echo   Abriendo el navegador...
-start http://localhost:3000
+start "" "%APP_URL%"
+echo.
+echo ============================================
+echo   Sistema iniciado (servicio de Windows)
+echo.
+echo   Aplicacion: %APP_URL%
+echo   Este panel se puede cerrar.
+echo ============================================
+timeout /t 3 /nobreak >nul
+exit /b 0
 
+:open_manual
+echo   Abriendo el navegador...
+start "" "%APP_URL%"
 echo.
 echo ============================================
 echo   Sistema iniciado - no cierres esta ventana
 echo.
-echo   Aplicacion: http://localhost:3000
+echo   Aplicacion: %APP_URL%
 echo.
 echo   Presiona una tecla en esta ventana para
 echo   cerrar el sistema.
 echo ============================================
-pause > nul
+pause >nul
 
 echo.
 echo Cerrando el sistema...
-taskkill /FI "WINDOWTITLE eq Sistema Stock - Backend*" /T /F > nul 2>nul
+taskkill /FI "WINDOWTITLE eq Sistema Stock - Backend*" /T /F >nul 2>nul
 echo Listo. Podes cerrar esta ventana.
-timeout /t 2 /nobreak > nul
+timeout /t 2 /nobreak >nul
+exit /b 0
+
+REM ────────────────────────────────────────────
+REM Subrutinas
+REM ────────────────────────────────────────────
+:check_health
+set "HEALTH=0"
+curl -s -o nul -w "%%{http_code}" --max-time 2 "%HEALTH_URL%" > "%HEALTH_FILE%" 2>nul
+if exist "%HEALTH_FILE%" set /p HEALTH=<"%HEALTH_FILE%"
+del "%HEALTH_FILE%" >nul 2>nul
+exit /b 0
+
+:wait_health
+set "READY=0"
+for /l %%i in (1,1,30) do (
+    call :check_health
+    if "!HEALTH!"=="200" (
+        set "READY=1"
+        goto :eof
+    )
+    timeout /t 1 /nobreak >nul
+)
+exit /b 0
+
+:service_state
+set "SERVICE_STATE="
+for /f "usebackq delims=" %%s in (`powershell -NoProfile -Command "$s = Get-Service -Name '%SERVICE_NAME%' -ErrorAction SilentlyContinue; if ($s) { $s.Status }"`) do set "SERVICE_STATE=%%s"
 exit /b 0

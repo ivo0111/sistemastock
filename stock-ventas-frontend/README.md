@@ -25,7 +25,8 @@ npm run build        # genera dist/
 En producción **no hay servidor de frontend aparte**: el backend Express
 sirve `stock-ventas-frontend/dist` en `http://localhost:3000` (estáticos +
 SPA fallback). `Iniciar Sistema.bat` recompila este build **solo si cambiaron
-las fuentes o la configuración** (`scripts/build-if-needed.js`).
+las fuentes o la configuración** (`scripts/build-if-needed.js`); si el backend
+corre como servicio de Windows, el arranque diario no compila nada.
 
 ## Comandos
 

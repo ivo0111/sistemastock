@@ -16,9 +16,13 @@ corriente de clientes, caja, compras a proveedores y reportes.
 
 1. Seguí la guía paso a paso en [INSTALACION.md](INSTALACION.md).
 2. Uso diario: doble clic en `Iniciar Sistema.bat`. Abre `http://localhost:3000`.
-   El script verifica PostgreSQL, aplica migraciones pendientes y recompila
-   backend/frontend **solo si cambiaron los archivos** (fingerprint SHA-256);
-   después levanta el servidor.
+   El lanzador primero comprueba si el backend ya responde; si no, verifica
+   PostgreSQL, aplica **solo migraciones pendientes** y recompila
+   backend/frontend **solo si cambiaron los archivos** (fingerprint SHA-256).
+   En un arranque normal no compila nada.
+3. Opcional: instalar el backend como servicio de Windows con NSSM para que
+   arranque solo al encender la PC. En ese caso `Iniciar Sistema.bat` solo abre
+   el navegador. Ver [INSTALACION.md](INSTALACION.md#inicio-automatico-como-servicio-opcional).
 
 Usuario inicial: `admin`. La contraseña se define en el instalador o se genera
 automáticamente y queda en `installer\credenciales-admin.txt`. El primer ingreso
@@ -32,10 +36,13 @@ obliga a cambiarla (no existe `admin123`).
 ├── INSTALACION.md             # guía de instalación (usuarios finales)
 ├── api.md                     # contrato de la API REST
 ├── installer/                 # Inno Setup (el .exe se genera, no se versiona)
-├── scripts/                   # backups, restauración, build condicional
+├── scripts/                   # backups, servicio, actualización, build condicional
 │   ├── backup_base_datos.ps1  # pg_dump + retención + validación
 │   ├── restaurar_base_datos.ps1
 │   ├── programar_backup.ps1   # Task Scheduler (SYSTEM, 21:30)
+│   ├── actualizar.ps1         # git pull + npm ci + migraciones + build + servicio
+│   ├── instalar_servicio.ps1  # servicio NSSM (opcional, no automático)
+│   ├── desinstalar_servicio.ps1
 │   └── build-if-needed.js     # compila solo si cambiaron las fuentes
 ├── stock-ventas-backend/
 │   ├── src/
@@ -47,6 +54,7 @@ obliga a cambiarla (no existe `admin123`).
 │   │                          # caja, categorias, proveedores, stock,
 │   │                          # reportes, usuarios, promociones, arca
 │   ├── prisma/                # schema.prisma, migraciones, seed
+│   ├── scripts/               # ensure-postgres, preparar-arranque, duplicados
 │   └── tests/                 # vitest (crea/dropea stock_ventas_test sola)
 └── stock-ventas-frontend/
     └── src/
@@ -85,6 +93,42 @@ npm run dev             # http://localhost:5173 (proxy /api -> :3000)
 
 En desarrollo se labura contra `vite dev`; para probar como usuario final,
 `npm run build` y arrancá el backend (o `Iniciar Sistema.bat`).
+
+## Arranque y actualizaciones
+
+`Iniciar Sistema.bat` no recompila en cada arranque:
+
+1. Si `http://localhost:3000/api/v1/health` responde, solo abre el navegador.
+2. Si existe el servicio de Windows `SistemaStock`, lo inicia y espera; no toca
+   Prisma ni builds.
+3. Si no hay servicio, ejecuta `ensure-postgres`, `preparar-arranque.js`
+   (migraciones solo si hay pendientes y `prisma generate` solo si cambió el
+   schema) y `build-if-needed.js` antes de levantar `node dist/server.js`.
+
+Servicio opcional con NSSM (el instalador **no** lo crea):
+
+```powershell
+# Como Administrador, con nssm.exe descargado
+powershell -ExecutionPolicy Bypass -File scripts\instalar_servicio.ps1 `
+  -NssmPath "C:\tools\nssm\nssm.exe"
+
+# Para volver al modo ventana
+powershell -ExecutionPolicy Bypass -File scripts\desinstalar_servicio.ps1
+```
+
+Actualización completa (detiene el servicio, `git pull`, `npm ci`, migraciones,
+build y reinicio):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\actualizar.ps1
+
+# Ver qué haría, sin ejecutar nada
+powershell -ExecutionPolicy Bypass -File scripts\actualizar.ps1 -DryRun
+```
+
+Si la instalación no es un clon de git, `actualizar.ps1` omite `git pull`; para
+actualizar el código hay que copiar los archivos nuevos o ejecutar el instalador.
+Ver [INSTALACION.md](INSTALACION.md) para el paso a paso y las opciones.
 
 ## Tests
 

@@ -13,8 +13,7 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
 - **Tests**: Vitest con base descartable `stock_ventas_test` (no afecta desarrollo).
 
 ## Estado actual (25/11/2026)
-- Último commit: `9e31874 FIX: integridad de caja y fechas del negocio`.
-- Los cambios de esta iteración están en el working tree (todavía sin commit).
+- Working tree limpio. La iteración de arranque rápido, servicio NSSM opcional y actualización está commiteada.
 - Tests: 35/35 OK. Typecheck y build de backend OK; build de frontend OK.
 - Migraciones nuevas aplicadas en desarrollo y en la base de tests.
 
@@ -36,11 +35,18 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
    - Invariante: suma de bases imponibles + IVA = total de la venta; suma de descuentos por ítem = descuento global.
 4. **`xlsx` sin CDN**
    - El frontend usa `xlsx@^0.18.5` desde el registry público de npm; ya no depende de `cdn.sheetjs.com` para instalar.
-5. **Launcher condicional**
+5. **Build condicional**
    - `Iniciar Sistema.bat` llama a `scripts\build-if-needed.js`, que calcula un fingerprint SHA-256 de fuentes/configuración y solo recompila backend/frontend cuando cambió algo. La estampilla vive en `node_modules/.cache/sistema-stock-build.json`.
 6. **Preflight de migración por comprobantes duplicados**
    - `scripts/verificar-duplicados-comprobantes.js` (`npm run verificar:comprobantes`) lista duplicados `(puntoVenta, tipoComprobante, numeroComprobante)` antes de migrar.
    - La migración `20261018999999_verificar_duplicados_comprobantes` repite el chequeo en SQL y aborta con `RAISE EXCEPTION` indicando los IDs a corregir.
+7. **Arranque rápido y actualizaciones**
+   - `Iniciar Sistema.bat` tiene un camino rápido: si `http://localhost:3000/api/v1/health` responde, solo abre el navegador. Si existe el servicio de Windows `SistemaStock`, lo inicia y espera; no ejecuta Prisma ni builds.
+   - Sin servicio, el launcher corre `ensure-postgres`, `stock-ventas-backend/scripts/preparar-arranque.js` y `build-if-needed.js`, y levanta `node dist/server.js` directamente (sin `npm start`).
+   - `preparar-arranque.js` consulta `_prisma_migrations` y solo ejecuta el chequeo de duplicados + `prisma migrate deploy` si hay migraciones pendientes/fallidas. `prisma generate` solo corre si falta el cliente o cambió el schema/versión (estampilla en `node_modules/.cache/prisma-generate.json`).
+   - `scripts/instalar_servicio.ps1` y `scripts/desinstalar_servicio.ps1` registran/quitan el backend como servicio con NSSM. **Son opcionales y no los ejecuta el instalador**; el sistema sigue funcionando en modo ventana.
+   - `scripts/actualizar.ps1`: detiene el servicio, hace `git pull --ff-only`, `npm ci` en ambos proyectos, verificaciones/migraciones, build y reinicio; soporta `-DryRun`, `-SkipGitPull`, `-SkipNpmCi`, `-SkipMigrations`, `-SkipBuild` y `-NoRestart`.
+   - Los logs del servicio quedan en `%ProgramData%\SistemaStock\Logs`.
 
 ## Consideraciones / riesgos remanentes
 - **Descuento global**: la implementación sigue el criterio de prorrateo por ítem y alícuota. Conviene que un contador valide un caso real con ARCA en homologación antes de pasar a producción.
@@ -48,6 +54,9 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
 - **ARCA**: `ARCA_MODO=mock` por default; `homologacion` / `produccion` requieren certificado y CUIT habilitados.
 - **`xlsx` 0.18.5**: es la última versión publicada en el registry público de npm y tiene avisos de seguridad conocidos (la versión parcheada solo se distribuye por el CDN de SheetJS). Solo se usa para importar archivos locales elegidos por el usuario; no procesa datos de terceros. Si se necesita la versión parcheada, evaluar vendorizar el paquete o migrar a otra librería.
 - **Migración de numeración**: si hay comprobantes duplicados, la migración falla a propósito. Corregir/anular los listados por el script y volver a ejecutar.
+- **Servicio NSSM**: es opcional y no lo crea el instalador. Corre como `SYSTEM`; si la generación de PDF falla por permisos del navegador, cambiar la cuenta del servicio a un usuario normal o volver al modo ventana.
+- **`actualizar.ps1`**: asume un clon de git para `git pull`; en instalaciones desde `.exe` omite ese paso y actualiza solo lo que se haya copiado. Con el servicio instalado requiere PowerShell como Administrador.
+- **Health check del launcher**: usa `curl` (incluido en Windows 10/11) contra `/api/v1/health`; si `curl` no existe, el arranque manual sigue funcionando pero puede tardar los 30 segundos de espera.
 
 ## Puntos clave para futuros modelos de IA
 - **Zona de negocio**: Argentina (UTC-3). Uso de `src/utils/fechas.ts` (`zFechaDesde`, `zFechaHasta`, `TZ_NEGOCIO`) para interpretar fechas.
@@ -55,6 +64,8 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
 - **Comprobante fiscal**: QR ARCA en `comprobante.template.ts`; fecha en zona de negocio; IVA y descuento global calculados por alícuota con `descuentoComprobante.ts`.
 - **Anulación de venta**: revierte cargo como `AJUSTE`, no como `PAGO`.
 - **Contraseña inicial**: `debeCambiarPassword` se guarda en la BD y viaja en el JWT; no alcanza con ocultar la pantalla en el frontend.
+- **Arranque**: el launcher no recompila por defecto; `preparar-arranque.js` evita `prisma generate`/`migrate deploy` cuando no hace falta. Si se agrega una migración o cambia el schema, se aplica sola en el siguiente arranque.
+- **Servicio de Windows**: `SistemaStock` (NSSM) es opcional. `Iniciar Sistema.bat` lo detecta y solo abre el navegador; para actualizar código usar `scripts\actualizar.ps1`.
 - **Scripts PowerShell**: pensados para Windows PowerShell 5.1; autodetectan `C:\Program Files\PostgreSQL\*\bin` y no exponen contraseñas en la línea de comandos.
 
 ## Comandos útiles
@@ -77,11 +88,19 @@ powershell -ExecutionPolicy Bypass -File scripts\programar_backup.ps1 -BackupTim
 
 # Restaurar un backup (cerrar el sistema antes)
 powershell -ExecutionPolicy Bypass -File scripts\restaurar_base_datos.ps1 -BackupFile "C:\ProgramData\SistemaStock\Backups\stock_ventas_2026-11-25_21-30.dump"
+
+# Actualizar código/dependencias/migraciones/build y reiniciar el servicio
+powershell -ExecutionPolicy Bypass -File scripts\actualizar.ps1
+powershell -ExecutionPolicy Bypass -File scripts\actualizar.ps1 -DryRun
+
+# Servicio opcional con NSSM (no lo ejecuta el instalador)
+powershell -ExecutionPolicy Bypass -File scripts\instalar_servicio.ps1 -NssmPath "C:\tools\nssm\nssm.exe"
+powershell -ExecutionPolicy Bypass -File scripts\desinstalar_servicio.ps1
 ```
 
 ## Documentación principal
-- `README.md` – guía general, desarrollo, backups y compilación del instalador.
-- `INSTALACION.md` – pasos detallados para usuarios finales.
+- `README.md` – guía general, desarrollo, arranque/actualizaciones, backups y compilación del instalador.
+- `INSTALACION.md` – pasos detallados para usuarios finales, servicio NSSM opcional y actualización.
 - `api.md` – contrato de la API REST.
 
 ## Acceso rápido

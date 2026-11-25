@@ -95,21 +95,126 @@ el sistema dia a dia:
 1. Andá a la carpeta de instalacion (`C:\Program Files\SistemaStock`).
 2. Hace **doble clic en `Iniciar Sistema.bat`** (o usa el acceso directo
    del Escritorio o Menu Inicio que creo el instalador).
-3. Se va a abrir una ventana minimizada (es el servidor, que tambien te
-   sirve la pagina del sistema) y una ventana principal que va a mostrar el
-   progreso (aplica actualizaciones de base de datos y, **solo si cambiaron
-   los archivos**, recompila backend/frontend).
+3. El lanzador primero comprueba si el backend ya esta respondiendo (por
+   ejemplo, si lo instalaste como servicio de Windows). Si no responde,
+   verifica PostgreSQL, aplica **solo las migraciones pendientes** y recompila
+   backend/frontend **solo si cambiaron los archivos**. En un arranque normal
+   no vuelve a compilar nada.
 4. Cuando este todo listo, se va a abrir tu navegador automaticamente en
    `http://localhost:3000` con el sistema.
-5. **No cierres la ventana principal** (la que dice "Sistema iniciado - no
-   cierres esta ventana") mientras estes usando el sistema.
-6. Para cerrar todo prolijamente al terminar de usarlo, volve a esa ventana
-   principal y presiona cualquier tecla — eso cierra el servidor de forma
-   ordenada.
+5. Si estas en **modo ventana** (sin servicio), **no cierres la ventana
+   principal** (la que dice "Sistema iniciado - no cierres esta ventana")
+   mientras estes usando el sistema. Para cerrar todo prolijamente, volve a esa
+   ventana y presiona cualquier tecla.
+6. Si instalaste el **servicio de Windows** (ver abajo), no hay ventana que
+   mantener abierta: el panel se puede cerrar y el backend sigue corriendo.
 
 **Credenciales**: usuario `admin` y la contrasena que definiste (o la que
 quedo en `installer\credenciales-admin.txt`). El primer ingreso obliga a
 cambiarla.
+
+### Inicio automatico como servicio (opcional)
+
+Por defecto el sistema se inicia con `Iniciar Sistema.bat` en modo ventana. Si
+queres que quede disponible solo al encender la PC y que el inicio sea
+instantaneo, podes registrar el backend como **servicio de Windows** con
+[NSSM](https://nssm.cc/download). Esto es **opcional**: el instalador no lo
+hace automaticamente y el sistema funciona igual sin este paso.
+
+Ventajas:
+
+- El backend arranca solo al iniciar Windows (PostgreSQL tambien es un
+  servicio).
+- `Iniciar Sistema.bat` detecta que el servicio ya responde y solo abre el
+  navegador: no compila, no ejecuta Prisma y no abre una ventana de consola.
+- No hay una ventana que se pueda cerrar por error.
+
+Pasos (una sola vez):
+
+1. Descarga NSSM desde [https://nssm.cc/download](https://nssm.cc/download) y
+   descomprimilo, por ejemplo en `C:\tools\nssm\nssm.exe`.
+2. Abri PowerShell **como Administrador** en la carpeta de instalacion.
+3. Ejecuta:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\instalar_servicio.ps1 `
+     -NssmPath "C:\tools\nssm\nssm.exe"
+   ```
+
+   El script crea el servicio `SistemaStock`, lo configura para iniciar
+   automaticamente y lo arranca. Los logs quedan en
+   `C:\ProgramData\SistemaStock\Logs`.
+4. Verifica con `Get-Service SistemaStock` (debe decir `Running`) y abri
+   `http://localhost:3000`.
+5. Para quitarlo:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\desinstalar_servicio.ps1
+   ```
+
+Si preferis hacerlo a mano con NSSM, los comandos equivalentes son:
+
+```powershell
+nssm install SistemaStock "C:\Program Files\nodejs\node.exe" `
+  "C:\Program Files\SistemaStock\stock-ventas-backend\dist\server.js"
+nssm set SistemaStock AppDirectory "C:\Program Files\SistemaStock\stock-ventas-backend"
+nssm set SistemaStock Start SERVICE_AUTO_START
+nssm start SistemaStock
+```
+
+**Alternativa con el Programador de tareas**: si no queres usar NSSM, podes
+crear una tarea con disparador "Al iniciar el sistema" que ejecute
+`node dist\server.js` con "Iniciar en" =
+`C:\Program Files\SistemaStock\stock-ventas-backend` y cuenta `SYSTEM`. El
+instalador **no** crea esta tarea. `Iniciar Sistema.bat` funciona igual: si el
+backend ya responde, solo abre el navegador.
+
+**Nota sobre PDFs**: el servicio corre como `SYSTEM`. Si la generacion de PDF
+falla por permisos del navegador, cambia la cuenta del servicio a un usuario
+normal desde `services.msc` (pestana "Iniciar sesion") o usa el modo ventana.
+
+### Actualizar el sistema
+
+Si instalaste el sistema desde un clon de git y queres actualizar codigo,
+dependencias, base y compilados en un solo paso:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\actualizar.ps1
+```
+
+El script:
+
+1. Detiene el servicio `SistemaStock` si esta instalado.
+2. Ejecuta `git pull --ff-only`.
+3. Ejecuta `npm ci` en backend y frontend.
+4. Verifica comprobantes duplicados, genera Prisma y aplica migraciones.
+5. Compila backend y frontend.
+6. Vuelve a iniciar el servicio y espera a que `http://localhost:3000`
+   responda.
+
+Opciones utiles:
+
+- `-DryRun`: muestra los pasos sin ejecutar nada.
+- `-SkipGitPull`: si copiaste los archivos a mano.
+- `-SkipNpmCi`, `-SkipMigrations`, `-SkipBuild`: para actualizaciones parciales.
+- `-NoRestart`: deja el servicio detenido al terminar.
+- `-Force`: continua aunque el backend este corriendo en modo ventana.
+
+Requiere PowerShell como Administrador si el servicio esta instalado o si la
+carpeta de instalacion esta en `Program Files`. Si instalaste con el `.exe`
+(sin `.git`), el script omite `git pull` y hace el resto sobre los archivos que
+hayas copiado; para una actualizacion completa tambien podes ejecutar el
+instalador nuevo.
+
+Si usas la alternativa de **tarea programada** en lugar del servicio, detene la
+tarea antes de actualizar (o usa `-Force`; `npm ci` puede fallar si el backend
+esta corriendo y bloquea archivos).
+
+Ejemplo por SSH (con una cuenta administradora del equipo):
+
+```powershell
+ssh usuario@equipo "powershell -ExecutionPolicy Bypass -File \"C:\Program Files\SistemaStock\scripts\actualizar.ps1\""
+```
 
 ---
 
@@ -144,7 +249,16 @@ Espera unos segundos mas — a veces el backend tarda un poco mas de lo
 normal en levantar. Si despues de un minuto sigue sin andar, revisa la
 ventana minimizada titulada "Sistema Stock - Backend" (podes
 maximizarla desde la barra de tareas) para ver si hay algun mensaje de
-error.
+error. Si instalaste el servicio, revisa
+`C:\ProgramData\SistemaStock\Logs\backend-err.log`.
+
+**El servicio `SistemaStock` no arranca o el puerto 3000 esta ocupado.**
+Revisa `C:\ProgramData\SistemaStock\Logs\backend-err.log`. Si dice
+`EADDRINUSE`, ya hay otro backend usando el puerto (por ejemplo, una ventana
+del modo manual que quedo abierta): cerrala y volve a iniciar el servicio. Si
+al instalar el servicio dice "Acceso denegado", ejecutaste el script sin
+permisos de Administrador. Para volver al modo ventana, desinstala el servicio
+con `scripts\desinstalar_servicio.ps1` y usa `Iniciar Sistema.bat`.
 
 **El instalador falla o no completa todos los pasos.**
 Revisa el log en `installer\install-log.txt` dentro de la carpeta de

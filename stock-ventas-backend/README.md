@@ -52,6 +52,7 @@ backend.
 | `npm run dev` | desarrollo con watch (tsx) |
 | `npm run build` | compila TypeScript a `dist/` |
 | `npm start` | corre `dist/server.js` |
+| `node scripts/preparar-arranque.js` | aplica migraciones pendientes y genera Prisma solo si hace falta (lo usa `Iniciar Sistema.bat`) |
 | `npm test` | vitest: crea/dropea la base `stock_ventas_test` y corre `tests/` |
 | `npm run lint` | oxlint sobre `src/` y `tests/` |
 | `npm run typecheck` | `tsc --noEmit` del código y de los tests |
