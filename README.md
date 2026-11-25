@@ -16,10 +16,13 @@ corriente de clientes, caja, compras a proveedores y reportes.
 
 1. Seguí la guía paso a paso en [INSTALACION.md](INSTALACION.md).
 2. Uso diario: doble clic en `Iniciar Sistema.bat`. Abre `http://localhost:3000`.
-   El script verifica PostgreSQL, aplica migraciones pendientes, compila backend
-   y frontend, y levanta el servidor.
+   El script verifica PostgreSQL, aplica migraciones pendientes y recompila
+   backend/frontend **solo si cambiaron los archivos** (fingerprint SHA-256);
+   después levanta el servidor.
 
-Usuario inicial: `admin` / `admin123` (cambialo en el primer ingreso).
+Usuario inicial: `admin`. La contraseña se define en el instalador o se genera
+automáticamente y queda en `installer\credenciales-admin.txt`. El primer ingreso
+obliga a cambiarla (no existe `admin123`).
 
 ## Estructura del repositorio
 
@@ -29,6 +32,11 @@ Usuario inicial: `admin` / `admin123` (cambialo en el primer ingreso).
 ├── INSTALACION.md             # guía de instalación (usuarios finales)
 ├── api.md                     # contrato de la API REST
 ├── installer/                 # Inno Setup (el .exe se genera, no se versiona)
+├── scripts/                   # backups, restauración, build condicional
+│   ├── backup_base_datos.ps1  # pg_dump + retención + validación
+│   ├── restaurar_base_datos.ps1
+│   ├── programar_backup.ps1   # Task Scheduler (SYSTEM, 21:30)
+│   └── build-if-needed.js     # compila solo si cambiaron las fuentes
 ├── stock-ventas-backend/
 │   ├── src/
 │   │   ├── app.ts             # Express: rutas + estáticos + SPA fallback
@@ -138,40 +146,63 @@ proyectos y tests del backend contra un PostgreSQL efímero.
   pueden tener ventas/compras asociadas.
 - **Correlativo de comprobante**: asignado con advisory lock dentro de la
   transacción que pide el CAE; dos comprobantes concurrentes no se pisan.
+- **Descuento global**: se prorratea en centavos entre todos los ítems y por
+  alícuota de IVA (`modules/ventas/descuentoComprobante.ts`). El comprobante y
+  la solicitud ARCA usan el mismo cálculo; nunca se resta una sola vez del total.
+- **Contraseña inicial**: se define/genera en el instalador y `debeCambiarPassword`
+  obliga a cambiarla; el backend bloquea el resto de la API mientras siga activa.
+- **Migración de numeración fiscal**: antes de crear el índice único de
+  comprobantes, una migración preflight detecta duplicados
+  `(puntoVenta, tipoComprobante, numeroComprobante)` y aborta con los IDs a
+  corregir (`npm run verificar:comprobantes`).
 
 ## Backups automáticos
 
 La base de datos (ventas, stock, cuenta corriente de clientes y caja) vive en
-PostgreSQL en el mismo equipo que el sistema. Un respaldo periódico es la única
-garantía real contra pérdida de datos; **el instalador no lo hace por vos**.
+PostgreSQL en el mismo equipo que el sistema. El instalador programa un backup
+diario a las **21:30**; también se puede ejecutar a mano.
 
 `scripts\backup_base_datos.ps1` genera respaldos con `pg_dump --format=custom`
-(los restaurables con `pg_restore`), en la carpeta `backups\` dentro de
-`stock-ventas-backend\`, y borra los más viejos que la retención
-(`-RetentionDays`, default 30 días). Lee la conexión desde
-`stock-ventas-backend\.env` (`DATABASE_URL`), así que no necesitás escribir
-contraseñas a mano:
+(restaurables con `pg_restore`) en `%ProgramData%\SistemaStock\Backups`, **fuera
+de la carpeta de la aplicación**, valida cada archivo con `pg_restore --list` y
+borra los más viejos que la retención (`-RetentionDays`, default 30 días; también
+`STOCK_BACKUP_RETENTION_DAYS`). Lee la conexión desde `stock-ventas-backend\.env`
+(`DATABASE_URL`), así que no hay que escribir contraseñas a mano:
 
 ```powershell
+# Backup manual
 powershell -ExecutionPolicy Bypass -File scripts\backup_base_datos.ps1
+
+# Backup + prueba real de restauración (base temporal, se borra sola)
+powershell -ExecutionPolicy Bypass -File scripts\backup_base_datos.ps1 -TestRestore
 ```
 
-Para respaldo diario programado (Task Scheduler), como Administrador:
+Programar/cambiar el backup diario (Task Scheduler, como Administrador):
 
-```cmd
-schtasks /Create /TN "Sistema Stock - Backup DB" /SC DAILY /ST 21:30 /RL HIGHEST /F ^
-  /TR "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\Program Files\SistemaStock\scripts\backup_base_datos.ps1\""
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\programar_backup.ps1 `
+  -BackupTime "21:30" -RetentionDays 30
+
+# Eliminar la tarea
+powershell -ExecutionPolicy Bypass -File scripts\programar_backup.ps1 -Unregister
 ```
 
-(El sistema es de un solo usuario; `SYSTEM` también sirve como `/RU`.)
+La tarea se registra como `SYSTEM` con `RunLevel Highest`, para que corra aunque
+no haya un usuario con sesión iniciada.
 
-Restaurar un respaldo sobre la base existente:
+Restaurar un respaldo (cerrar el sistema antes):
 
-```cmd
-"\Program Files\PostgreSQL\18\bin\pg_restore.exe" --clean --if-exists --no-owner -U postgres -h localhost -d stock_ventas "stock_ventas_2026-11-10_21-30.dump"
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\restaurar_base_datos.ps1 `
+  -BackupFile "C:\ProgramData\SistemaStock\Backups\stock_ventas_2026-11-25_21-30.dump"
 ```
 
-(O con `pgAdmin`: clic derecho en la base → "Restore...").
+El script valida el `.dump`, pide confirmación y genera un backup de seguridad
+del estado actual antes de reemplazar los datos. También se puede usar
+`pgAdmin` (clic derecho en la base → "Restore...").
+
+> Los backups quedan en el mismo equipo. Para protección ante falla de disco,
+> copiar `%ProgramData%\SistemaStock\Backups` a otro disco o a la nube.
 
 ## Compilar el instalador
 

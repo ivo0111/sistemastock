@@ -77,6 +77,9 @@ model Usuario {
   passwordHash String   @map("password_hash")
   rol          Rol      @default(VENDEDOR)
   activo       Boolean  @default(true)
+  // Se activa en el usuario admin que crea el instalador (contraseña inicial
+  // generada). Mientras sea true, el backend solo permite cambiar la contraseña.
+  debeCambiarPassword Boolean @default(false) @map("debe_cambiar_password")
   creadoEn     DateTime @default(now()) @map("creado_en")
   
   ventas            Venta[]

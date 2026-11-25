@@ -29,8 +29,13 @@ backend.
 4. **Migraciones y seed**
    ```bash
    npx prisma migrate dev
-   npm run seed            # usuario admin: admin / admin123
+   npm run seed            # admin inicial (contraseña segura; ver abajo)
    ```
+   El seed usa `ADMIN_PASSWORD` si está definida; si no, genera una contraseña
+   aleatoria y la imprime. Nunca usa `admin123`. Si `ADMIN_PASSWORD` está
+   definida (lo hace el instalador), se aplica siempre y se fuerza el cambio en
+   el próximo login; si no, un admin existente conserva su contraseña salvo que
+   sea la insegura `admin123`, que se rota.
 
 5. **Servidor**
    ```bash
@@ -52,6 +57,7 @@ backend.
 | `npm run typecheck` | `tsc --noEmit` del código y de los tests |
 | `npm run prisma:migrate` | crear/aplicar migraciones en desarrollo |
 | `npm run seed` | usuario admin inicial |
+| `npm run verificar:comprobantes` | lista duplicados de `(puntoVenta, tipoComprobante, numeroComprobante)` antes de migrar |
 
 ## Estructura
 
@@ -83,6 +89,20 @@ tests/
 - Si no hay `.env`, se usa la variable de entorno `DATABASE_URL` (así funciona
   en CI).
 - Los tests ejercitan los services directamente (sin pasar por HTTP).
+
+## Ventas y comprobante
+
+`modules/ventas/descuentoComprobante.ts` es la única fuente de verdad para el
+descuento global: lo prorratea en centavos entre los ítems y por alícuota de IVA,
+y arma el desglose fiscal. Lo usan tanto el HTML del comprobante como la solicitud
+a ARCA, así impresión y presentación fiscal no divergen. Invariante: bases
+imponibles + IVA = total de la venta.
+
+## Autenticación
+
+El JWT incluye `debeCambiarPassword`. Mientras sea `true`, `requireAuth` solo deja
+pasar `POST /auth/cambiar-password` (403 `CAMBIO_PASSWORD_REQUERIDO` en el resto).
+Esto evita saltear el cambio inicial llamando a la API directamente.
 
 ## ARCA (facturación electrónica)
 

@@ -17,7 +17,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "verificar:comprobantes": "node scripts/verificar-duplicados-comprobantes.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

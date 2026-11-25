@@ -266,6 +266,7 @@ select.form-control { appearance: auto; }
 }
 .alert-error { background: #fce4ec; color: #b71c1c; border: 1px solid #f8d7da; }
 .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
 
 /* Grid */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

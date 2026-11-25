@@ -21,5 +21,9 @@ Thumbs.db
 # no se versiona. Para publicarlo, subilo a una GitHub Release.
 installer/Output/
 
+# Credenciales iniciales generadas por el instalador: nunca versionar.
+installer/credenciales-admin.txt
+installer/.postinstall-ok
+
 # Respaldos de la base de datos generados por scripts/backup_base_datos.ps1
 stock-ventas-backend/backups/

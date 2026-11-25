@@ -157,11 +157,14 @@ export default function POS() {
   }
 
   function cartItemSubtotal(item) {
-    return item.precioUnitario * item.cantidad * (1 - bonifEfectiva(item) / 100)
+    // Mismo redondeo por línea que aplica el backend (2 decimales): si no,
+    // el total del POS podía diferir un centavo del total guardado/impreso.
+    const bruto = item.precioUnitario * item.cantidad * (1 - bonifEfectiva(item) / 100)
+    return Math.round(bruto * 100) / 100
   }
 
   const subtotal = cart.reduce((sum, item) => sum + cartItemSubtotal(item), 0)
-  const total = Math.max(0, subtotal - Number(descuento))
+  const total = Math.max(0, Math.round((subtotal - Number(descuento)) * 100) / 100)
   const esCuentaCorriente = formaPago === 'cuenta_corriente'
   const faltaCliente = esCuentaCorriente && !clienteId
   // Efectivo sin caja abierta: la venta quedaría fuera de todo turno de caja

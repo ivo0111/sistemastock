@@ -4,6 +4,7 @@ import { arcaConfig } from "../../config/arca.config";
 import { TZ_NEGOCIO } from "../../utils/fechas";
 import { ResultadoCAE } from "../arca/arca.types";
 import { CONDICION_IVA_LABEL, CODIGO_TIPO_COMPROBANTE } from "./arca.labels";
+import { calcularResumenFiscal } from "./descuentoComprobante";
 
 type VentaConDetalle = Prisma.VentaGetPayload<{
   include: { items: { include: { producto: true } }; cliente: true; usuario: true };
@@ -44,62 +45,6 @@ const DOS_DECIMALES = 2;
 
 function redondear2(valor: Prisma.Decimal): Prisma.Decimal {
   return valor.toDecimalPlaces(DOS_DECIMALES, Prisma.Decimal.ROUND_HALF_UP);
-}
-
-interface DetalleIva {
-  alicuota: number;
-  baseImponible: Prisma.Decimal;
-  montoIva: Prisma.Decimal;
-}
-
-/**
- * Arma el desglose de IVA agrupado por alícuota, en Decimal (no en floats:
- * los centavos del comprobante deben cuadrar con el total guardado).
- *
- * El descuento global de la venta se prorratea entre los ítems en proporción
- * a su subtotal: sin eso, el "Importe Neto Gravado" + IVA no cerraría contra
- * el Total cuando hay descuento.
- */
-function calcularDesgloseIva(
-  items: VentaConDetalle["items"],
-  descuento: Prisma.Decimal
-): DetalleIva[] {
-  const subtotalTotal = items.reduce((suma, item) => suma.add(item.subtotal), new Prisma.Decimal(0));
-  if (subtotalTotal.isZero()) return [];
-
-  const map = new Map<number, { baseImponible: Prisma.Decimal; totalNeto: Prisma.Decimal }>();
-
-  for (const item of items) {
-    const alicuota = Number(item.producto.alicuotaIva ?? 21);
-    const subtotal = new Prisma.Decimal(item.subtotal);
-
-    // Prorrateo del descuento global sobre este ítem
-    const parteDescuento = subtotal.mul(descuento).div(subtotalTotal);
-    const subtotalNeto = subtotal.sub(parteDescuento);
-
-    const divisor = new Prisma.Decimal(1).add(new Prisma.Decimal(alicuota).div(100));
-    const baseImponible = redondear2(subtotalNeto.div(divisor));
-
-    const acumulado = map.get(alicuota) ?? {
-      baseImponible: new Prisma.Decimal(0),
-      totalNeto: new Prisma.Decimal(0),
-    };
-    map.set(alicuota, {
-      baseImponible: acumulado.baseImponible.add(baseImponible),
-      totalNeto: acumulado.totalNeto.add(subtotalNeto),
-    });
-  }
-
-  return Array.from(map.entries())
-    .sort((a, b) => b[0] - a[0])
-    .map(([alicuota, vals]) => ({
-      alicuota,
-      baseImponible: vals.baseImponible,
-      // El IVA se calcula por alícuota (total del grupo − base redondeada),
-      // no por ítem: el resto por ítem acumulaba centavos sueltos y el
-      // desglose mostrado podía no cuadrar con el total de la venta.
-      montoIva: redondear2(vals.totalNeto.sub(vals.baseImponible)),
-    }));
 }
 
 /**
@@ -150,17 +95,24 @@ export async function generarHtmlComprobante(
     ? await QRCode.toDataURL(urlQr, { margin: 1, width: 320, errorCorrectionLevel: "M" })
     : null;
 
-  const descuento = new Prisma.Decimal(venta.descuento ?? 0);
-  const subtotalBruto = venta.items.reduce(
-    (suma, item) => suma.add(item.subtotal),
-    new Prisma.Decimal(0)
+  // Mismo cálculo que se envía a ARCA (descuento prorrateado por ítem y por
+  // alícuota). Así la impresión no puede diferir de la presentación fiscal.
+  const resumenFiscal = calcularResumenFiscal(
+    venta.items.map((item) => ({
+      subtotal: item.subtotal,
+      alicuotaIva: item.producto.alicuotaIva,
+    })),
+    venta.descuento ?? 0
   );
-  const desgloseIva = discriminaIva ? calcularDesgloseIva(venta.items, descuento) : [];
+  const descuento = resumenFiscal.descuento;
+  const subtotalBruto = resumenFiscal.subtotalBruto;
+  const desgloseIva = discriminaIva ? resumenFiscal.desgloseIva : [];
 
   const filasItems = venta.items
-    .map((item) => {
+    .map((item, indice) => {
       const bonif = new Prisma.Decimal(item.bonificacionPorcentaje ?? 0);
-      const subtotal = new Prisma.Decimal(item.subtotal);
+      // Subtotal de la línea ya con su parte proporcional del descuento global.
+      const subtotalConDescuento = resumenFiscal.items[indice].subtotalNeto;
       const celdasBase = `
         <td>${escapeHtml(item.producto.sku || "-")}</td>
         <td>${escapeHtml(item.producto.nombre)}</td>
@@ -173,14 +125,14 @@ export async function generarHtmlComprobante(
         <td class="num">${formatearMoneda(item.precioUnitario)}</td>
         <td class="num">${bonif.toFixed(2)}</td>
         <td class="num">${item.cantidad}</td>
-        <td class="num">${formatearMoneda(subtotal)}</td>
+        <td class="num">${formatearMoneda(subtotalConDescuento)}</td>
       </tr>`;
       }
 
       const alicuota = Number(item.producto.alicuotaIva ?? 21);
       const divisor = new Prisma.Decimal(1).add(new Prisma.Decimal(alicuota).div(100));
       const precioNeto = redondear2(new Prisma.Decimal(item.precioUnitario).div(divisor));
-      const subtotalNeto = redondear2(subtotal.div(divisor));
+      const subtotalNeto = redondear2(subtotalConDescuento.div(divisor));
 
       return `
       <tr>
@@ -190,7 +142,7 @@ export async function generarHtmlComprobante(
         <td class="num">${item.cantidad}</td>
         <td class="num">${formatearMoneda(subtotalNeto)}</td>
         <td class="num">${alicuota}%</td>
-        <td class="num">${formatearMoneda(subtotal)}</td>
+        <td class="num">${formatearMoneda(subtotalConDescuento)}</td>
       </tr>`;
     })
     .join("");
@@ -256,7 +208,12 @@ export async function generarHtmlComprobante(
     <div>Descuento: -${formatearMoneda(descuento)}</div>`
         : ""
     }
-    <div class="total">Total: ${formatearMoneda(venta.total)}</div>
+    <div class="total">Total: ${formatearMoneda(resumenFiscal.total)}</div>
+    ${
+      descuento.greaterThan(0)
+        ? `<div class="nota-descuento">Descuento global prorrateado por ítem y alícuota de IVA.</div>`
+        : ""
+    }
   </div>
 
   <div class="page-footer">
@@ -421,6 +378,7 @@ export async function generarHtmlComprobante(
   }
   .totales { margin-top: 12px; text-align: right; font-size: 10.5pt; }
   .totales .descuento { color: #555; }
+  .totales .nota-descuento { color: #555; font-size: 8pt; margin-top: 3px; }
   .totales .total {
     font-size: 14pt;
     font-weight: bold;

@@ -35,16 +35,34 @@
 Rate-limit: 10 intentos / 15 min.
 ```json
 // Request
-{ "usuario": "admin", "password": "admin123" }
+{ "usuario": "admin", "password": "<contraseña definida en el instalador>" }
 
 // Response 200
-{ "token": "jwt...", "usuario": { "id": 1, "nombre": "Administrador", "rol": "ADMIN" } }
+{
+  "token": "jwt...",
+  "debeCambiarPassword": false,
+  "usuario": {
+    "id": 1,
+    "nombre": "Administrador",
+    "usuario": "admin",
+    "rol": "ADMIN",
+    "debeCambiarPassword": false
+  }
+}
 ```
+Si `debeCambiarPassword` es `true` (contraseña inicial del instalador o rotación
+de una contraseña insegura), el JWT solo habilita `POST /auth/cambiar-password`.
+Cualquier otra ruta autenticada responde `403 CAMBIO_PASSWORD_REQUERIDO`.
 
 ### POST `/auth/cambiar-password`
 ```json
-{ "passwordActual": "admin123", "passwordNuevo": "nueva-clave" }
+// Request (Authorization: Bearer <token>)
+{ "passwordActual": "<contraseña actual>", "passwordNuevo": "nueva-clave" }
+
+// Response 204 (sin body)
 ```
+`passwordNuevo` requiere mínimo 6 caracteres. Al cambiarla se limpia
+`debeCambiarPassword`; conviene volver a loguearse para obtener un token nuevo.
 
 ---
 
@@ -142,13 +160,17 @@ Todas las rutas requieren login; las marcadas **[ADMIN]** no.
     "clienteId": 1,            // requerido si formaPago = CUENTA_CORRIENTE
     "items": [ { "productoId": 1, "cantidad": 2, "bonificacion": 10 } ],
     "formaPago": "EFECTIVO | TARJETA | TRANSFERENCIA | CUENTA_CORRIENTE",
-    "descuento": 0             // descuento global en pesos
+    "descuento": 0             // descuento global en pesos (no porcentaje)
   }
   // Response 201: la venta con items
   ```
   Reglas:
   - El precio unitario sale de la BD (el cliente no lo manda).
   - La bonificación efectiva es `max(bonificacion del vendedor, promoción vigente)`.
+  - El `descuento` global se prorratea entre todos los ítems en proporción a su
+    subtotal y se imputa a la alícuota de IVA de cada uno
+    (`modules/ventas/descuentoComprobante.ts`). No se resta una sola vez del
+    total: la suma de bases imponibles + IVA siempre cierra contra el total.
   - Errores: `STOCK_INSUFICIENTE` (409), `CLIENTE_REQUERIDO` (400),
     `PRODUCTO_INACTIVO` (409), `DESCUENTO_INVALIDO` (400).
   - Descuenta stock + crea movimientos `VENTA`; si la forma de pago es

@@ -49,11 +49,22 @@ popd
 echo.
 
 REM ────────────────────────────────────────────
-REM 2) Prisma: generar cliente y aplicar
+REM 2) Prisma: verificar duplicados de
+REM    comprobantes, generar cliente y aplicar
 REM    migraciones pendientes
 REM ────────────────────────────────────────────
 echo [2/5] Aplicando base de datos (Prisma)...
 pushd stock-ventas-backend
+call node scripts\verificar-duplicados-comprobantes.js
+if errorlevel 1 (
+    echo.
+    echo ERROR: hay comprobantes duplicados en la base. La migracion de
+    echo        numeracion fiscal se abortaria para no romper la integridad.
+    echo        Corregi o anula los comprobantes listados arriba y reintenta.
+    popd
+    pause
+    exit /b 1
+)
 call npx prisma generate >nul
 if errorlevel 1 (
     echo ERROR: fallo "prisma generate". Revisa el error de arriba.
@@ -72,31 +83,25 @@ popd
 echo.
 
 REM ────────────────────────────────────────────
-REM 3) Compilar backend y frontend SIEMPRE
-REM    (asi cualquier cambio de codigo queda
-REM     reflejado en cada arranque)
+REM 3) Compilar backend y frontend SOLO si
+REM    cambiaron las fuentes (hash/mtime).
+REM    Ver scripts\build-if-needed.js.
 REM ────────────────────────────────────────────
-echo [3/5] Compilando backend...
-pushd stock-ventas-backend
-call npm run build
+echo [3/5] Compilando backend (solo si hubo cambios)...
+call node "%~dp0scripts\build-if-needed.js" stock-ventas-backend
 if errorlevel 1 (
     echo ERROR: fallo la compilacion del backend. Revisa el error de arriba.
-    popd
     pause
     exit /b 1
 )
-popd
 
-echo [4/5] Compilando frontend...
-pushd stock-ventas-frontend
-call npm run build
+echo [4/5] Compilando frontend (solo si hubo cambios)...
+call node "%~dp0scripts\build-if-needed.js" stock-ventas-frontend
 if errorlevel 1 (
     echo ERROR: fallo la compilacion del frontend. Revisa el error de arriba.
-    popd
     pause
     exit /b 1
 )
-popd
 echo.
 
 REM ────────────────────────────────────────────

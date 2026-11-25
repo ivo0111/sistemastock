@@ -24,7 +24,8 @@ npm run build        # genera dist/
 
 En producción **no hay servidor de frontend aparte**: el backend Express
 sirve `stock-ventas-frontend/dist` en `http://localhost:3000` (estáticos +
-SPA fallback). `Iniciar Sistema.bat` compila este build en cada arranque.
+SPA fallback). `Iniciar Sistema.bat` recompila este build **solo si cambiaron
+las fuentes o la configuración** (`scripts/build-if-needed.js`).
 
 ## Comandos
 
@@ -52,6 +53,11 @@ src/
 
 ## Notas
 
+- **Contraseña inicial**: `AuthContext`/`ProtectedRoute` redirigen a
+  `/cambiar-password` mientras `debeCambiarPassword` sea `true`. El backend
+  igual bloquea la API, así que la redirección es solo UX.
+- `xlsx` se instala desde el registry público de npm (`^0.18.5`); ya no se
+  depende de `cdn.sheetjs.com`.
 - La bonificación de promociones se calcula en `src/utils/promociones.js` y
   el backend vuelve a validar/aplicar la mejor vigente al confirmar la venta:
   el front es solo UX, la fuente de verdad es el backend.

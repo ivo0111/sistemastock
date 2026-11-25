@@ -3,7 +3,14 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { Rol } from "@prisma/client";
 
-const SELECT_USUARIO = { id: true, nombre: true, usuario: true, rol: true, activo: true } as const;
+const SELECT_USUARIO = {
+  id: true,
+  nombre: true,
+  usuario: true,
+  rol: true,
+  activo: true,
+  debeCambiarPassword: true,
+} as const;
 
 const ROUNDS_BCRYPT = 10;
 
@@ -63,5 +70,8 @@ export async function cambiarPasswordPropia(usuarioId: number, passwordActual: s
   if (!ok) throw new AppError("PASSWORD_ACTUAL_INCORRECTA", "La contraseña actual es incorrecta", 400);
 
   const passwordHash = await bcrypt.hash(passwordNuevo, ROUNDS_BCRYPT);
-  await prisma.usuario.update({ where: { id: usuarioId }, data: { passwordHash } });
+  await prisma.usuario.update({
+    where: { id: usuarioId },
+    data: { passwordHash, debeCambiarPassword: false },
+  });
 }

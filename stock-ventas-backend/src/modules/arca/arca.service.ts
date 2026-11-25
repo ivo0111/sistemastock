@@ -47,6 +47,13 @@ export async function solicitarCAE(input: SolicitudCAE): Promise<ResultadoCAE> {
   //   3. POST del CMS resultante a arcaConfig.wsaaUrl -> <token>, <sign>.
   //   4. FECompUltimoAutorizado(puntoVenta, tipoComprobante) en wsfeUrl.
   //   5. FECAESolicitar con el número siguiente y los datos de `input`.
+  //      Para Facturas A/B, armar <Iva> con un <Iva> por alícuota usando
+  //      `input.iva` (Id = código WSFEv1, BaseImp, Importe) y completar
+  //      ImpNeto = input.importeNeto, ImpIVA = input.importeIva,
+  //      ImpTotal = input.importeTotal. El descuento global ya viene
+  //      prorrateado por ítem/alícuota desde ventas.service.
+  //      Para Factura C (Monotributo) no se discrimina IVA: ImpNeto =
+  //      ImpTotal, ImpIVA = 0 y <Iva> vacío.
   //   6. Si el resultado es "R" (rechazado), lanzar AppError con el detalle
   //      que devuelve ARCA en <Observaciones>.
   throw new AppError(
@@ -88,13 +95,22 @@ async function solicitarCAEMock(input: SolicitudCAE): Promise<ResultadoCAE> {
   const caeVencimiento = new Date();
   caeVencimiento.setDate(caeVencimiento.getDate() + 10);
 
+  const observaciones = ["CAE simulado (ARCA_MODO=mock) — no tiene validez fiscal"];
+  if (input.iva && input.iva.length > 0) {
+    observaciones.push(
+      `Desglose IVA prorrateado: ${input.iva
+        .map((iva) => `Id ${iva.id} base ${iva.baseImponible.toFixed(2)} IVA ${iva.importe.toFixed(2)}`)
+        .join("; ")}`
+    );
+  }
+
   return {
     cae: `MOCK${String(numeroComprobante).padStart(10, "0")}`,
     caeVencimiento,
     numeroComprobante,
     puntoVenta: input.puntoVenta,
     tipoComprobante: input.tipoComprobante,
-    observaciones: ["CAE simulado (ARCA_MODO=mock) — no tiene validez fiscal"],
+    observaciones,
   };
 }
 

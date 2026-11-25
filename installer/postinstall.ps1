@@ -1,4 +1,4 @@
-<#
+﻿<#
     postinstall.ps1
     ────────────────
     Lógica real de instalación, invocada por setup.iss después de copiar
@@ -41,7 +41,11 @@ param(
     [string]$ArcaPuntoVenta = '1',
     [string]$ArcaDomicilio = '',
     [string]$ArcaIngresosBrutos = '',
-    [string]$ArcaFechaInicio = ''
+    [string]$ArcaFechaInicio = '',
+    [string]$BackupTime = '21:30',
+    [string]$BackupDir = '',
+    [int]$BackupRetentionDays = 30,
+    [switch]$SkipBackupSchedule
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -68,6 +72,17 @@ function Test-NodeInstalled {
     }
 }
 
+function New-PasswordAleatoria([int]$Longitud = 16) {
+    $alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*+-_=?"
+    $bytes = New-Object byte[] ($Longitud * 2)
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $password = ""
+    for ($i = 0; $password.Length -lt $Longitud -and $i -lt $bytes.Length; $i++) {
+        $password += $alfabeto[$bytes[$i] % $alfabeto.Length]
+    }
+    return $password
+}
+
 # Log persistente: aunque la ventana se cierre o el texto se corra de
 # pantalla, todo lo que se imprime durante la instalación queda acá.
 $logPath = Join-Path $AppDir "installer\install-log.txt"
@@ -84,6 +99,16 @@ try {
         Write-Err "Si corrés este script a mano, definila primero: `$env:PG_PASSWORD = 'tu-clave'"
         $exitCode = 30
         throw "PG_PASSWORD no está definida."
+    }
+
+    # Contraseña inicial del admin: si el instalador (página del asistente) la
+    # definió, se usa esa; si quedó vacía, se genera una aleatoria. Nunca se
+    # usa una contraseña fija como admin123.
+    $adminPassword = $env:ADMIN_PASSWORD
+    $adminPasswordGenerada = $false
+    if ([string]::IsNullOrWhiteSpace($adminPassword)) {
+        $adminPassword = New-PasswordAleatoria 16
+        $adminPasswordGenerada = $true
     }
 
     # ────────────────────────────────────────────────────────────
@@ -279,6 +304,16 @@ Pop-Location
     $pkgCount = (Get-ChildItem $nmDir -Directory | Measure-Object).Count
     Write-Host "node_modules verificado: $pkgCount paquetes instalados en $nmDir"
 
+    Write-Step "Verificando integridad de comprobantes antes de migrar"
+    cmd /c node scripts\verificar-duplicados-comprobantes.js
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Hay comprobantes duplicados: la migración de numeración fiscal se abortaría."
+        Write-Err "Corregí o anulá los comprobantes listados arriba y volvé a ejecutar el instalador."
+        Pop-Location
+        $exitCode = 30
+        throw "Comprobantes duplicados: migración abortada."
+    }
+
     Write-Step "Aplicando migraciones de la base de datos"
     cmd /c npx prisma migrate deploy
     if ($LASTEXITCODE -ne 0) {
@@ -289,9 +324,20 @@ Pop-Location
     }
 
     Write-Step "Creando usuario administrador inicial"
-    cmd /c npm run seed
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "El seed falló o el usuario admin ya existía (esto es normal si ya lo habías corrido antes)." -ForegroundColor Yellow
+    # La contraseña se pasa al seed por entorno (no por línea de comandos) y
+    # se limpia enseguida: npm install/prisma ya corrieron sin verla.
+    $env:ADMIN_PASSWORD = $adminPassword
+    try {
+        cmd /c npm run seed
+        $seedOk = ($LASTEXITCODE -eq 0)
+    } finally {
+        Remove-Item Env:\ADMIN_PASSWORD -ErrorAction SilentlyContinue
+    }
+    if (-not $seedOk) {
+        Write-Err "No se pudo crear/actualizar el usuario admin inicial."
+        Pop-Location
+        $exitCode = 30
+        throw "Falló el seed del usuario admin."
     }
 
     Write-Step "Compilando backend"
@@ -346,8 +392,58 @@ Pop-Location
 
     Pop-Location
 
+    # ────────────────────────────────────────────────────────────
+    # 6) Programar backup diario (Task Scheduler, SYSTEM + Highest)
+    # ────────────────────────────────────────────────────────────
+    if (-not $SkipBackupSchedule) {
+        Write-Step "Programando backup automático de la base"
+        $scheduler = Join-Path $AppDir "scripts\programar_backup.ps1"
+        if (Test-Path -LiteralPath $scheduler) {
+            try {
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scheduler `
+                    -BackupTime $BackupTime -RetentionDays $BackupRetentionDays `
+                    -BackupDir $BackupDir
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "No se pudo programar el backup (código $LASTEXITCODE)." -ForegroundColor Yellow
+                    Write-Host "Podés hacerlo luego como Administrador con scripts\programar_backup.ps1." -ForegroundColor Yellow
+                } else {
+                    Write-Host "Backup diario programado a las $BackupTime (retención $BackupRetentionDays días)."
+                }
+            } catch {
+                Write-Host "No se pudo programar el backup: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "Podés hacerlo luego como Administrador con scripts\programar_backup.ps1." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "No se encontró scripts\programar_backup.ps1; no se programó el backup." -ForegroundColor Yellow
+        }
+    }
+
     Write-Step "Instalación completa"
-    Write-Host "Usuario admin inicial: admin / admin123 (cambiala al entrar al sistema)."
+    Write-Host "Usuario admin inicial: admin"
+    if ($adminPasswordGenerada) {
+        $credPath = Join-Path $AppDir "installer\credenciales-admin.txt"
+        @"
+Sistema Stock — credenciales iniciales
+======================================
+Usuario: admin
+Contraseña: $adminPassword
+
+IMPORTANTE:
+- El sistema te va a pedir cambiar esta contraseña en el primer inicio de sesión.
+- Después de cambiarla, borrá este archivo.
+"@ | Set-Content -Path $credPath -Encoding UTF8
+        # El archivo tiene la contraseña en texto plano: que solo lo puedan
+        # leer Administradores y SYSTEM (no todos los usuarios del equipo).
+        & icacls $credPath /inheritance:r /grant:r "*S-1-5-32-544:(F)" "*S-1-5-18:(F)" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Aviso: no se pudieron restringir los permisos de $credPath." -ForegroundColor Yellow
+        }
+        Write-Host "Se generó una contraseña aleatoria para admin." -ForegroundColor Green
+        Write-Host "Está guardada en: $credPath"
+        Write-Host "El sistema pedirá cambiarla al primer inicio de sesión." -ForegroundColor Yellow
+    } else {
+        Write-Host "Contraseña definida en el instalador. El sistema pedirá cambiarla al primer inicio de sesión." -ForegroundColor Yellow
+    }
 
     # Marcar instalación exitosa para que Inno Setup sepa que puede ofrecer "Iniciar Sistema"
     $postinstallOk = Join-Path $AppDir "installer\.postinstall-ok"

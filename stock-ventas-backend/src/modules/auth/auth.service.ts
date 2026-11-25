@@ -16,13 +16,28 @@ export async function login(usuario: string, password: string) {
   }
 
   const token = jwt.sign(
-    { id: user.id, usuario: user.usuario, rol: user.rol },
+    {
+      id: user.id,
+      usuario: user.usuario,
+      rol: user.rol,
+      debeCambiarPassword: user.debeCambiarPassword,
+    },
     process.env.JWT_SECRET as string,
     { expiresIn: process.env.JWT_EXPIRES_IN || "8h" } as jwt.SignOptions
   );
 
   return {
     token,
-    usuario: { id: user.id, nombre: user.nombre, usuario: user.usuario, rol: user.rol },
+    // El frontend usa esta bandera para redirigir al cambio obligatorio y el
+    // backend, vía requireAuth, bloquea cualquier otra operación mientras siga
+    // en true (así no se puede saltear la pantalla llamando a la API directo).
+    debeCambiarPassword: user.debeCambiarPassword,
+    usuario: {
+      id: user.id,
+      nombre: user.nombre,
+      usuario: user.usuario,
+      rol: user.rol,
+      debeCambiarPassword: user.debeCambiarPassword,
+    },
   };
 }

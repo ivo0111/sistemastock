@@ -56,6 +56,7 @@ Source: "..\stock-ventas-frontend\*"; DestDir: "{app}\stock-ventas-frontend"; \
     Excludes: "node_modules\*,dist\*"; Flags: recursesubdirs ignoreversion
 Source: "..\Iniciar Sistema.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\INSTALACION.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\scripts\*"; DestDir: "{app}\scripts"; Flags: recursesubdirs ignoreversion
 Source: "postinstall.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 
 [Icons]
@@ -84,6 +85,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Iniciar el sistema ahora"; \
 var
   PgPage: TInputQueryWizardPage;
   ArcaPage: TInputQueryWizardPage;
+  AdminPage: TInputQueryWizardPage;
 
 procedure InitializeWizard;
 begin
@@ -117,6 +119,16 @@ begin
 
   ArcaPage.Values[0] := 'MONOTRIBUTO';
   ArcaPage.Values[3] := '1';
+
+  AdminPage := CreateInputQueryPage(ArcaPage.ID,
+    'Usuario administrador inicial',
+    'Contraseña inicial de "admin"',
+    'Definí la contraseña inicial del usuario admin (mínimo 8 caracteres) o dejá ' +
+    'ambos campos vacíos para que el instalador genere una contraseña aleatoria. ' +
+    'En cualquier caso, el sistema va a pedir cambiarla en el primer inicio de sesión.');
+
+  AdminPage.Add('Contraseña inicial (vacío = generar aleatoria):', True);
+  AdminPage.Add('Repetir contraseña:', True);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -133,6 +145,23 @@ begin
       PgPage.Values[0] := 'postgres';
     if PgPage.Values[2] = '' then
       PgPage.Values[2] := '5432';
+  end;
+
+  if CurPageID = AdminPage.ID then
+  begin
+    if (AdminPage.Values[0] <> '') or (AdminPage.Values[1] <> '') then
+    begin
+      if Length(AdminPage.Values[0]) < 8 then
+      begin
+        MsgBox('La contraseña inicial del admin debe tener al menos 8 caracteres.', mbError, MB_OK);
+        Result := False;
+      end
+      else if AdminPage.Values[0] <> AdminPage.Values[1] then
+      begin
+        MsgBox('La contraseña inicial y su repetición no coinciden.', mbError, MB_OK);
+        Result := False;
+      end;
+    end;
   end;
 end;
 
@@ -151,6 +180,10 @@ function SetEnvironmentVariable(lpName, lpValue: String): Boolean;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   SetEnvironmentVariable('PG_PASSWORD', PgPage.Values[1]);
+  // Vacío = postinstall.ps1 genera una contraseña aleatoria. Se pasa por
+  // entorno (no por línea de comandos) para no exponerla en el listado de
+  // procesos.
+  SetEnvironmentVariable('ADMIN_PASSWORD', AdminPage.Values[0]);
   Result := '';
 end;
 

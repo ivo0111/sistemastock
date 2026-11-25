@@ -14,6 +14,7 @@ import * as arcaService from "../arca/arca.service";
 import { TipoComprobanteArca } from "../arca/arca.types";
 import * as promocionesService from "../promociones/promociones.service";
 import { generarHtmlComprobante } from "./comprobante.template";
+import { calcularResumenFiscal, codigoIvaArca } from "./descuentoComprobante";
 
 
 interface ItemInput {
@@ -148,9 +149,13 @@ export async function crearVenta(input: CrearVentaInput) {
       );
 
       const precioUnitario = new Decimal(producto[0].precio_venta);
+      // Los importes fiscales se guardan a 2 decimales: sin este redondeo, el
+      // total podía tener centavos "fantasma" que no coincidían con el
+      // comprobante ni con el prorrateo del descuento global.
       const subtotal = precioUnitario
         .mul(item.cantidad)
-        .mul(new Decimal(1).sub(bonificacion.div(100)));
+        .mul(new Decimal(1).sub(bonificacion.div(100)))
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       total = total.add(subtotal);
 
       itemsData.push({
@@ -170,7 +175,10 @@ export async function crearVenta(input: CrearVentaInput) {
 
     // El descuento se valida contra el subtotal calculado con precios de BD:
     // si lo supera, el total quedaría negativo (el front lo corrige, el backend no).
-    const descuento = new Decimal(input.descuento ?? 0);
+    const descuento = new Decimal(input.descuento ?? 0).toDecimalPlaces(
+      2,
+      Decimal.ROUND_HALF_UP
+    );
     if (descuento.isNegative()) {
       throw new AppError("DESCUENTO_INVALIDO", "El descuento no puede ser negativo", 400);
     }
@@ -181,7 +189,7 @@ export async function crearVenta(input: CrearVentaInput) {
         400
       );
     }
-    total = total.sub(descuento);
+    total = total.sub(descuento).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // La venta queda imputada a la caja abierta del usuario (null solo para
     // formas de pago que no mueven efectivo, p. ej. un admin sin turno).
@@ -325,10 +333,41 @@ export async function generarComprobante(id: number, copias = 1): Promise<string
           tipoComprobante as TipoComprobante
         );
 
+        // Mismo prorrateo que usa el comprobante impreso: el descuento global
+        // se reparte por ítem/alícuota antes de informar Neto e IVA a ARCA.
+        const resumenFiscal = calcularResumenFiscal(
+          venta.items.map((item) => ({
+            subtotal: item.subtotal,
+            alicuotaIva: item.producto.alicuotaIva,
+          })),
+          venta.descuento ?? 0
+        );
+        const discriminaIva = tipoComprobante !== "FACTURA_C";
+        const iva = discriminaIva
+          ? resumenFiscal.desgloseIva
+              .map((detalle) => {
+                const id = codigoIvaArca(detalle.alicuota);
+                if (id === null) return null;
+                return {
+                  id,
+                  baseImponible: Number(detalle.baseImponible),
+                  importe: Number(detalle.montoIva),
+                };
+              })
+              .filter((detalle): detalle is NonNullable<typeof detalle> => detalle !== null)
+          : [];
+
         const resultado = await arcaService.solicitarCAE({
           puntoVenta: arcaConfig.puntoVenta,
           tipoComprobante,
           importeTotal: Number(venta.total),
+          // Factura C no discrimina IVA: el neto es el total y no se manda
+          // array de alícuotas (así lo espera WSFEv1 para Monotributo).
+          importeNeto: discriminaIva
+            ? Number(resumenFiscal.importeNeto)
+            : Number(venta.total),
+          importeIva: discriminaIva ? Number(resumenFiscal.importeIva) : 0,
+          iva,
           fecha: venta.fecha,
           cuitReceptor: venta.cliente?.cuit ?? undefined,
           numeroComprobanteSugerido,

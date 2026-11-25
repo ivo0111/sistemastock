@@ -10,7 +10,7 @@ export default function Login() {
   const { login, user } = useAuth()
   const navigate = useNavigate()
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={user.debeCambiarPassword ? '/cambiar-password' : '/'} replace />
 
   async function handleSubmit(e) {
     e.preventDefault()
