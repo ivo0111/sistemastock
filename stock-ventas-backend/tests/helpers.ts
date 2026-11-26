@@ -14,7 +14,7 @@ export function idUnico(prefijo: string) {
 // con singleFork (base compartida), así que cada archivo arranca limpio.
 export async function limpiarBase() {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE usuarios, categorias, productos, movimientos_stock, clientes, movimientos_cuenta_corriente, ventas, venta_items, proveedores, compras, compra_items, caja, promociones RESTART IDENTITY CASCADE`
+    `TRUNCATE TABLE usuarios, categorias, productos, movimientos_stock, clientes, movimientos_cuenta_corriente, ventas, venta_items, proveedores, compras, compra_items, caja, promociones, producto_proveedor, importaciones_factura RESTART IDENTITY CASCADE`
   );
 }
 

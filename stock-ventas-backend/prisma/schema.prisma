@@ -29,7 +29,7 @@ enum TipoMovimientoStock {
 
 enum TipoMovimientoCuentaCorriente {
   CARGO // aumenta la deuda del cliente (ej: venta a cuenta corriente)
-  PAGO  // reduce la deuda del cliente
+  PAGO // reduce la deuda del cliente
   AJUSTE // corrección manual (positiva o negativa)
 }
 
@@ -41,6 +41,25 @@ enum EstadoVenta {
 enum EstadoCompra {
   RECIBIDA
   PENDIENTE
+}
+
+// Una compra puede cargarse a mano o nacer de la importación de una factura.
+enum OrigenCompra {
+  MANUAL
+  IMPORTADA
+}
+
+// Ciclo de vida de una factura subida: se parsea, queda pendiente de revisión
+// y recién al confirmar se crea la compra y se impacta el stock.
+enum EstadoImportacion {
+  PENDIENTE
+  CONFIRMADA
+  DESCARTADA
+}
+
+enum MotorExtraccion {
+  LOCAL
+  IA
 }
 
 enum FormaPago {
@@ -71,22 +90,24 @@ enum TipoComprobante {
 // ─────────────────────────────────────────────
 
 model Usuario {
-  id           Int      @id @default(autoincrement())
-  nombre       String
-  usuario      String   @unique
-  passwordHash String   @map("password_hash")
-  rol          Rol      @default(VENDEDOR)
-  activo       Boolean  @default(true)
+  id                  Int      @id @default(autoincrement())
+  nombre              String
+  usuario             String   @unique
+  passwordHash        String   @map("password_hash")
+  rol                 Rol      @default(VENDEDOR)
+  activo              Boolean  @default(true)
   // Se activa en el usuario admin que crea el instalador (contraseña inicial
   // generada). Mientras sea true, el backend solo permite cambiar la contraseña.
-  debeCambiarPassword Boolean @default(false) @map("debe_cambiar_password")
-  creadoEn     DateTime @default(now()) @map("creado_en")
-  
-  ventas            Venta[]
-  movimientosStock  MovimientoStock[]
-  cajaAperturas     Caja[]
-  compras           Compra[]
+  debeCambiarPassword Boolean  @default(false) @map("debe_cambiar_password")
+  creadoEn            DateTime @default(now()) @map("creado_en")
+
+  ventas                     Venta[]
+  movimientosStock           MovimientoStock[]
+  cajaAperturas              Caja[]
+  compras                    Compra[]
   movimientosCuentaCorriente MovimientoCuentaCorriente[]
+  importacionesFactura       ImportacionFactura[]
+
   @@map("usuarios")
 }
 
@@ -95,8 +116,8 @@ model Usuario {
 // ─────────────────────────────────────────────
 
 model Categoria {
-  id       Int        @id @default(autoincrement())
-  nombre   String     @unique
+  id        Int        @id @default(autoincrement())
+  nombre    String     @unique
   productos Producto[]
 
   @@map("categorias")
@@ -120,11 +141,12 @@ model Producto {
   creadoEn      DateTime @default(now()) @map("creado_en")
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
-  categoria         Categoria?         @relation(fields: [categoriaId], references: [id])
-  movimientosStock  MovimientoStock[]
-  ventaItems        VentaItem[]
-  compraItems       CompraItem[]
-  promociones       Promocion[]
+  categoria        Categoria?          @relation(fields: [categoriaId], references: [id])
+  movimientosStock MovimientoStock[]
+  ventaItems       VentaItem[]
+  compraItems      CompraItem[]
+  promociones      Promocion[]
+  proveedores      ProductoProveedor[]
 
   @@index([nombre])
   @@index([stockActual])
@@ -136,15 +158,15 @@ model Producto {
 // ─────────────────────────────────────────────
 
 model MovimientoStock {
-  id              Int                 @id @default(autoincrement())
-  productoId      Int                 @map("producto_id")
-  tipo            TipoMovimientoStock
-  cantidad        Int                 // positivo = alta, negativo = baja
-  fecha           DateTime            @default(now())
-  usuarioId       Int                 @map("usuario_id")
-  referenciaTipo  String?             @map("referencia_tipo") // "venta" | "compra" | null
-  referenciaId    Int?                @map("referencia_id")
-  motivo          String?
+  id             Int                 @id @default(autoincrement())
+  productoId     Int                 @map("producto_id")
+  tipo           TipoMovimientoStock
+  cantidad       Int // positivo = alta, negativo = baja
+  fecha          DateTime            @default(now())
+  usuarioId      Int                 @map("usuario_id")
+  referenciaTipo String?             @map("referencia_tipo") // "venta" | "compra" | null
+  referenciaId   Int?                @map("referencia_id")
+  motivo         String?
 
   producto Producto @relation(fields: [productoId], references: [id])
   usuario  Usuario  @relation(fields: [usuarioId], references: [id])
@@ -159,18 +181,19 @@ model MovimientoStock {
 // ─────────────────────────────────────────────
 
 model Cliente {
-  id                   Int      @id @default(autoincrement())
+  id                   Int           @id @default(autoincrement())
   nombre               String
   telefono             String?
   email                String?
-  cuentaCorrienteSaldo Decimal  @default(0) @map("cuenta_corriente_saldo") @db.Decimal(12, 2)
-  creadoEn             DateTime @default(now()) @map("creado_en")
-  cuit         String?       @map("cuit")
-  condicionIva CondicionIva? @map("condicion_iva")
-  domicilioComercial String? @map("domicilio_comercial")
+  cuentaCorrienteSaldo Decimal       @default(0) @map("cuenta_corriente_saldo") @db.Decimal(12, 2)
+  creadoEn             DateTime      @default(now()) @map("creado_en")
+  cuit                 String?       @map("cuit")
+  condicionIva         CondicionIva? @map("condicion_iva")
+  domicilioComercial   String?       @map("domicilio_comercial")
 
-  ventas Venta[]
+  ventas                     Venta[]
   movimientosCuentaCorriente MovimientoCuentaCorriente[]
+
   @@map("clientes")
 }
 
@@ -198,18 +221,18 @@ model MovimientoCuentaCorriente {
 // ─────────────────────────────────────────────
 
 model Venta {
-  id          Int         @id @default(autoincrement())
-  clienteId   Int?        @map("cliente_id")
-  usuarioId   Int         @map("usuario_id")
+  id                Int              @id @default(autoincrement())
+  clienteId         Int?             @map("cliente_id")
+  usuarioId         Int              @map("usuario_id")
   // Caja (turno de caja) en la que se registró la venta. Null solo si el
   // usuario no tenía una caja abierta al momento de vender.
-  cajaId      Int?        @map("caja_id")
-  fecha       DateTime    @default(now())
-  total       Decimal     @db.Decimal(12, 2)
-  descuento   Decimal     @default(0) @db.Decimal(12, 2)
-  formaPago   FormaPago   @map("forma_pago")
-  estado      EstadoVenta @default(CONFIRMADA)
-  motivoAnulacion String? @map("motivo_anulacion")
+  cajaId            Int?             @map("caja_id")
+  fecha             DateTime         @default(now())
+  total             Decimal          @db.Decimal(12, 2)
+  descuento         Decimal          @default(0) @db.Decimal(12, 2)
+  formaPago         FormaPago        @map("forma_pago")
+  estado            EstadoVenta      @default(CONFIRMADA)
+  motivoAnulacion   String?          @map("motivo_anulacion")
   // Datos del comprobante fiscal ARCA (ex-AFIP). Null hasta que se pide el CAE
   // (se pide una sola vez, la primera vez que se abre el comprobante).
   tipoComprobante   TipoComprobante? @map("tipo_comprobante")
@@ -223,25 +246,25 @@ model Venta {
   caja    Caja?       @relation(fields: [cajaId], references: [id])
   items   VentaItem[]
 
-  @@index([fecha])
-  @@index([estado])
   // Red de seguridad de la numeración fiscal: aunque el lock de fila evita
   // correlativos repetidos en el camino feliz, la BD no permite que dos
   // comprobantes del mismo tipo y punto de venta se cuelen con el mismo número.
   // (Columnas nullable: en Postgres las claves únicas no compiten con NULL,
   // así que las ventas sin comprobante no chocan entre sí.)
   @@unique([puntoVenta, tipoComprobante, numeroComprobante])
+  @@index([fecha])
+  @@index([estado])
   @@map("ventas")
 }
 
 model VentaItem {
-  id             Int     @id @default(autoincrement())
-  ventaId        Int     @map("venta_id")
-  productoId     Int     @map("producto_id")
-  cantidad       Int
-  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  id                     Int     @id @default(autoincrement())
+  ventaId                Int     @map("venta_id")
+  productoId             Int     @map("producto_id")
+  cantidad               Int
+  precioUnitario         Decimal @map("precio_unitario") @db.Decimal(12, 2)
   bonificacionPorcentaje Decimal @default(0) @map("bonificacion_porcentaje") @db.Decimal(5, 2)
-  subtotal       Decimal @db.Decimal(12, 2)
+  subtotal               Decimal @db.Decimal(12, 2)
 
   venta    Venta    @relation(fields: [ventaId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
@@ -255,16 +278,46 @@ model VentaItem {
 // ─────────────────────────────────────────────
 
 model Proveedor {
-  id       Int      @id @default(autoincrement())
-  nombre   String
-  contacto String?
-  telefono String?
-  email    String?
-  creadoEn DateTime @default(now()) @map("creado_en")
+  id           Int           @id @default(autoincrement())
+  nombre       String
+  // El CUIT permite reconocer automáticamente al proveedor en las facturas
+  // importadas. Nullable para los proveedores ya cargados a mano.
+  cuit         String?       @unique
+  condicionIva CondicionIva? @map("condicion_iva")
+  contacto     String?
+  telefono     String?
+  email        String?
+  creadoEn     DateTime      @default(now()) @map("creado_en")
 
-  compras Compra[]
+  compras       Compra[]
+  productos     ProductoProveedor[]
+  importaciones ImportacionFactura[]
 
   @@map("proveedores")
+}
+
+// Equivalencia entre un producto del catálogo y la forma en que lo nombra o
+// codifica un proveedor. Se aprende al confirmar una factura importada y
+// permite que la próxima vez el match sea automático.
+model ProductoProveedor {
+  id                   Int      @id @default(autoincrement())
+  proveedorId          Int      @map("proveedor_id")
+  productoId           Int      @map("producto_id")
+  codigoProveedor      String?  @map("codigo_proveedor")
+  descripcionProveedor String?  @map("descripcion_proveedor")
+  ultimoPrecio         Decimal? @map("ultimo_precio") @db.Decimal(12, 2)
+  creadoEn             DateTime @default(now()) @map("creado_en")
+  actualizadoEn        DateTime @updatedAt @map("actualizado_en")
+
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id])
+  producto  Producto  @relation(fields: [productoId], references: [id])
+
+  // Un mismo código de proveedor no puede apuntar a dos productos distintos.
+  // codigoProveedor es nullable: Postgres permite varios NULL por índice.
+  @@unique([proveedorId, codigoProveedor])
+  @@index([proveedorId, productoId])
+  @@index([productoId])
+  @@map("producto_proveedor")
 }
 
 model Compra {
@@ -276,20 +329,41 @@ model Compra {
   fecha       DateTime     @default(now())
   total       Decimal      @db.Decimal(12, 2)
   estado      EstadoCompra @default(RECIBIDA)
+  origen      OrigenCompra @default(MANUAL)
 
-  proveedor Proveedor    @relation(fields: [proveedorId], references: [id])
-  usuario   Usuario?     @relation(fields: [usuarioId], references: [id])
-  items     CompraItem[]
+  // Datos del comprobante del proveedor. Quedan nullables porque las compras
+  // cargadas a mano no los piden.
+  tipoComprobante   String?   @map("tipo_comprobante") // "A", "B", "C", "M", "NC_A", ...
+  puntoVenta        Int?      @map("punto_venta")
+  numeroComprobante String?   @map("numero_comprobante")
+  fechaComprobante  DateTime? @map("fecha_comprobante")
+  proveedorCuit     String?   @map("proveedor_cuit")
+  subtotal          Decimal?  @db.Decimal(12, 2)
+  iva               Decimal?  @db.Decimal(12, 2)
+  percepciones      Decimal?  @db.Decimal(12, 2)
+  cae               String?
 
+  proveedor   Proveedor           @relation(fields: [proveedorId], references: [id])
+  usuario     Usuario?            @relation(fields: [usuarioId], references: [id])
+  items       CompraItem[]
+  importacion ImportacionFactura?
+
+  // Evita cargar dos veces el mismo comprobante. Postgres no compara NULL,
+  // así que las compras manuales (sin datos fiscales) no se ven afectadas.
+  @@unique([proveedorId, tipoComprobante, puntoVenta, numeroComprobante])
   @@map("compras")
 }
 
 model CompraItem {
-  id             Int     @id @default(autoincrement())
-  compraId       Int     @map("compra_id")
-  productoId     Int     @map("producto_id")
-  cantidad       Int
-  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  id              Int      @id @default(autoincrement())
+  compraId        Int      @map("compra_id")
+  productoId      Int      @map("producto_id")
+  cantidad        Int
+  precioUnitario  Decimal  @map("precio_unitario") @db.Decimal(12, 2)
+  // Datos tal como venían en la factura; en compras manuales quedan null.
+  descripcion     String?  @map("descripcion")
+  codigoProveedor String?  @map("codigo_proveedor")
+  alicuotaIva     Decimal? @map("alicuota_iva") @db.Decimal(4, 2)
 
   compra   Compra   @relation(fields: [compraId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
@@ -297,19 +371,67 @@ model CompraItem {
   @@map("compra_items")
 }
 
+// Factura subida y parseada, a la espera de que un humano confirme el match
+// de sus líneas con el catálogo. No impacta stock por sí sola.
+model ImportacionFactura {
+  id            Int               @id @default(autoincrement())
+  usuarioId     Int               @map("usuario_id")
+  nombreArchivo String?           @map("nombre_archivo")
+  archivoMime   String?           @map("archivo_mime")
+  // El PDF original vive en la base: los pg_dump ya lo incluyen y no hay
+  // problemas de permisos al instalar la app en Program Files.
+  archivoContenido Bytes?         @map("archivo_contenido")
+  archivoHash   String?           @map("archivo_hash")
+  estado        EstadoImportacion @default(PENDIENTE)
+  motor         MotorExtraccion   @default(LOCAL)
+
+  // Encabezado detectado (o completado a mano por el usuario).
+  proveedorId       Int?      @map("proveedor_id")
+  proveedorCuit     String?   @map("proveedor_cuit")
+  proveedorNombre   String?   @map("proveedor_nombre")
+  tipoComprobante   String?   @map("tipo_comprobante")
+  puntoVenta        Int?      @map("punto_venta")
+  numeroComprobante String?   @map("numero_comprobante")
+  fechaComprobante  DateTime? @map("fecha_comprobante")
+  subtotal          Decimal?  @db.Decimal(12, 2)
+  iva               Decimal?  @db.Decimal(12, 2)
+  percepciones      Decimal?  @db.Decimal(12, 2)
+  total             Decimal?  @db.Decimal(12, 2)
+  cae               String?
+
+  // Líneas detectadas + sugerencias de matching. Se guardan como JSON porque
+  // son un borrador: recién al confirmar se convierten en CompraItem.
+  itemsJson    Json    @map("items_json")
+  advertencias Json?   @map("advertencias_json")
+  confianza    Int? // 0-100, confianza global de la extracción
+  error        String?
+
+  compraId      Int?     @unique @map("compra_id")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  usuario   Usuario    @relation(fields: [usuarioId], references: [id])
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
+  compra    Compra?    @relation(fields: [compraId], references: [id])
+
+  @@index([estado])
+  @@index([creadoEn])
+  @@map("importaciones_factura")
+}
+
 // ─────────────────────────────────────────────
 // Caja
 // ─────────────────────────────────────────────
 
 model Caja {
-  id                Int       @id @default(autoincrement())
-  usuarioId         Int       @map("usuario_id")
-  fechaApertura     DateTime  @default(now()) @map("fecha_apertura")
-  fechaCierre       DateTime? @map("fecha_cierre")
-  montoInicial      Decimal   @map("monto_inicial") @db.Decimal(12, 2)
-  montoFinalContado Decimal?  @map("monto_final_contado") @db.Decimal(12, 2)
+  id                 Int       @id @default(autoincrement())
+  usuarioId          Int       @map("usuario_id")
+  fechaApertura      DateTime  @default(now()) @map("fecha_apertura")
+  fechaCierre        DateTime? @map("fecha_cierre")
+  montoInicial       Decimal   @map("monto_inicial") @db.Decimal(12, 2)
+  montoFinalContado  Decimal?  @map("monto_final_contado") @db.Decimal(12, 2)
   montoFinalEsperado Decimal?  @map("monto_final_esperado") @db.Decimal(12, 2)
-  diferencia        Decimal?  @db.Decimal(12, 2)
+  diferencia         Decimal?  @db.Decimal(12, 2)
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
   ventas  Venta[]
@@ -331,17 +453,17 @@ enum TipoPromocion {
 }
 
 model Promocion {
-  id             Int            @id @default(autoincrement())
+  id             Int           @id @default(autoincrement())
   nombre         String
   tipo           TipoPromocion
-  productoId     Int?           @map("producto_id")
-  valor          Decimal        @db.Decimal(5, 2)
-  cantidadMinima Int            @default(1) @map("cantidad_minima")
-  activo         Boolean        @default(true)
-  fechaInicio    DateTime?      @map("fecha_inicio")
-  fechaFin       DateTime?      @map("fecha_fin")
-  creadoEn       DateTime       @default(now()) @map("creado_en")
-  actualizadoEn  DateTime       @updatedAt @map("actualizado_en")
+  productoId     Int?          @map("producto_id")
+  valor          Decimal       @db.Decimal(5, 2)
+  cantidadMinima Int           @default(1) @map("cantidad_minima")
+  activo         Boolean       @default(true)
+  fechaInicio    DateTime?     @map("fecha_inicio")
+  fechaFin       DateTime?     @map("fecha_fin")
+  creadoEn       DateTime      @default(now()) @map("creado_en")
+  actualizadoEn  DateTime      @updatedAt @map("actualizado_en")
 
   producto Producto? @relation(fields: [productoId], references: [id])
 

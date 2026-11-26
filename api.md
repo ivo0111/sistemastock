@@ -192,7 +192,9 @@ Todas las rutas requieren login; las marcadas **[ADMIN]** no.
 
 - `GET /proveedores`, `GET /proveedores/:id` (login).
 - `POST /`, `PUT /:id`, `DELETE /:id` **[ADMIN]** —
-  `{ "nombre", "contacto?", "telefono?", "email?" }`.
+  `{ "nombre", "cuit?", "condicionIva?", "contacto?", "telefono?", "email?" }`.
+  `cuit` se normaliza a `30-71234567-8` y es único; `condicionIva` es
+  `RESPONSABLE_INSCRIPTO | MONOTRIBUTO | CONSUMIDOR_FINAL | EXENTO`.
 
 ---
 
@@ -210,6 +212,100 @@ Todas las rutas requieren login; las marcadas **[ADMIN]** no.
   actualiza `precioCosto`. Rechaza productos inactivos (`PRODUCTO_INACTIVO`).
 - `GET /compras` — query: `?desde=&hasta=&proveedor_id=&page=&limit=`.
 - `GET /compras/:id`.
+
+### 8.1 Importación de facturas de proveedor **[ADMIN]**
+
+El PDF se parsea, se guarda en la base (`ImportacionFactura`) y queda
+**pendiente de revisión**. Ninguna de estas llamadas impacta stock hasta
+confirmar.
+
+- `POST /compras/importaciones` — `multipart/form-data`, campo `archivo`
+  (PDF electrónico con texto seleccionable, máximo 15 MB).
+  Respuesta:
+  ```json
+  {
+    "id": 12,
+    "estado": "PENDIENTE",
+    "motor": "LOCAL",
+    "proveedorCuit": "30-71234567-8",
+    "proveedorNombre": "DISTRIBUIDORA DEL NORTE S.A.",
+    "tipoComprobante": "A",
+    "puntoVenta": 3,
+    "numeroComprobante": "00000127",
+    "fechaComprobante": "2026-11-20T12:00:00.000Z",
+    "subtotal": 60012,
+    "iva": 12602.52,
+    "total": 72614.52,
+    "cae": "71234567890123",
+    "confianza": 100,
+    "advertencias": [],
+    "proveedorSugerido": null,
+    "items": [
+      {
+        "linea": 1,
+        "codigoProveedor": "779001",
+        "descripcion": "Yerba Mate Tradicional 1 kg",
+        "cantidad": 12,
+        "precioUnitario": 1500,
+        "subtotal": 18000,
+        "alicuotaIva": null,
+        "sugerencias": [
+          { "productoId": 4, "nombre": "Yerba Mate 1 kg", "sku": "YER-001", "puntaje": 92, "motivo": "nombre similar" }
+        ],
+        "productoIdSugerido": 4
+      }
+    ]
+  }
+  ```
+  Errores: `ARCHIVO_REQUERIDO`, `ARCHIVO_NO_PDF`, `PDF_ILEGIBLE`,
+  `PDF_SIN_TEXTO`.
+- `GET /compras/importaciones?estado=PENDIENTE|CONFIRMADA|DESCARTADA`.
+- `GET /compras/importaciones/:id`.
+- `GET /compras/importaciones/:id/archivo` — devuelve el PDF original.
+- `POST /compras/importaciones/:id/confirmar`
+  ```json
+  {
+    "proveedorId": 1,
+    "comprobante": {
+      "tipoComprobante": "A",
+      "puntoVenta": 3,
+      "numeroComprobante": "00000127",
+      "fechaComprobante": "2026-11-20",
+      "subtotal": 60012,
+      "iva": 12602.52,
+      "percepciones": 0,
+      "total": 72614.52,
+      "cae": "71234567890123"
+    },
+    "items": [
+      {
+        "linea": 1,
+        "productoId": 4,
+        "cantidad": 12,
+        "precioUnitario": 1500,
+        "alicuotaIva": 21
+      },
+      {
+        "linea": 2,
+        "crearProducto": {
+          "nombre": "Café La Virginia 500 g",
+          "sku": "779003",
+          "precioVenta": 4200
+        },
+        "cantidad": 6,
+        "precioUnitario": 3200
+      }
+    ],
+    "actualizarPrecioCosto": true
+  }
+  ```
+  Para proveedor nuevo se envía `crearProveedor` en lugar de `proveedorId`:
+  `{ "nombre", "cuit?", "condicionIva?" }`. Todas las líneas detectadas deben
+  mapearse a un producto existente o a `crearProducto`; si falta una, responde
+  `ITEMS_INCOMPLETOS`. Cantidades decimales se rechazan (`CANTIDAD_INVALIDA`)
+  porque `CompraItem.cantidad` es entero. Un comprobante ya cargado para el
+  mismo proveedor responde `COMPROBANTE_DUPLICADO`.
+- `POST /compras/importaciones/:id/descartar` — 204. No crea compra.
 
 ---
 

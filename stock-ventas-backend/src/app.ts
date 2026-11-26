@@ -11,6 +11,7 @@ import ventasRoutes from "./modules/ventas/ventas.routes";
 import categoriasRoutes from "./modules/categorias/categorias.routes";
 import proveedoresRoutes from "./modules/proveedores/proveedores.routes";
 import comprasRoutes from "./modules/compras/compras.routes";
+import importacionFacturasRoutes from "./modules/compras/importacion/importacion.routes";
 import clientesRoutes from "./modules/clientes/clientes.routes";
 import cajaRoutes from "./modules/caja/caja.routes";
 import reportesRoutes from "./modules/reportes/reportes.routes";
@@ -67,6 +68,8 @@ app.use("/api/v1/productos", productosRoutes);
 app.use("/api/v1/ventas", ventasRoutes);
 app.use("/api/v1/categorias", categoriasRoutes);
 app.use("/api/v1/proveedores", proveedoresRoutes);
+// Antes de /compras para que /compras/importaciones no caiga en /compras/:id.
+app.use("/api/v1/compras/importaciones", importacionFacturasRoutes);
 app.use("/api/v1/compras", comprasRoutes);
 app.use("/api/v1/clientes", clientesRoutes);
 app.use("/api/v1/caja", cajaRoutes);

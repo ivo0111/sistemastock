@@ -12,12 +12,27 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
 - **Instalador**: Inno Setup + `postinstall.ps1`. Verifica/instala Node.js, verifica PostgreSQL, genera `.env`, corre `npm install`, migraciones, seed, build y programa el backup diario.
 - **Tests**: Vitest con base descartable `stock_ventas_test` (no afecta desarrollo).
 
-## Estado actual (25/11/2026)
-- Working tree limpio. La iteración de arranque rápido, servicio NSSM opcional y actualización está commiteada.
-- Tests: 35/35 OK. Typecheck y build de backend OK; build de frontend OK.
-- Migraciones nuevas aplicadas en desarrollo y en la base de tests.
+## Estado actual (26/11/2026)
+- Se agregó la importación de facturas de compra en PDF con revisión previa y mapeo de productos.
+- Tests: parser/matching/confirmación cubiertos en `tests/importacionFacturas.test.ts`. Typecheck y build de backend OK; build de frontend OK.
+- Migración `20261126000000_importacion_facturas_proveedor` aplicada en desarrollo y en la base de tests.
 
-## Medidas implementadas en esta iteración
+## Medidas implementadas en esta iteración (26/11/2026)
+1. **Importación de facturas de proveedor (PDF ARCA)**
+   - `POST /compras/importaciones` recibe `multipart/form-data` con el campo `archivo` (máx. 15 MB, solo PDF).
+   - La extracción es local: `pdfjs-dist@3.11.174` (build legacy CommonJS cargado con `require` en `importacion/pdf.ts`) obtiene las líneas con coordenadas y `parser.ts` las interpreta. No se depende de texto plano ni de servicios externos.
+   - Detecta proveedor (CUIT y razón social), comprobante (tipo/letra, punto de venta, número, fecha, subtotal, IVA, percepciones, total, CAE) e ítems (código, descripción, cantidad, precio unitario, alícuota).
+   - `matching.ts` sugiere productos por equivalencia aprendida (`ProductoProveedor`), SKU, código de barras y similitud Dice; con puntaje bajo no asigna automáticamente.
+   - `ia.ts` es un fallback opcional compatible con OpenAI, apagado por defecto y configurable con `FACTURA_IA_*`. Sin IA el flujo sigue funcionando igual.
+   - El PDF original se guarda en `ImportacionFactura.archivoContenido` (`BYTEA`) para que quede dentro de `pg_dump`; las consultas usan `SELECTOR_IMPORTACION` para no traerlo.
+   - Nada impacta stock hasta confirmar. `importacion.service.ts` confirma en una sola transacción: crea la compra (`origen=IMPORTADA`), reutiliza `registrarCompraEnTx`, puede crear proveedor/producto y guarda equivalencias. Exige que todas las líneas estén mapeadas (`ITEMS_INCOMPLETOS`).
+   - Duplicados: índice único en `Compra` por `(proveedorId, tipoComprobante, puntoVenta, numeroComprobante)` y chequeo previo (`COMPROBANTE_DUPLICADO`).
+   - Frontend: `/compras/importar` para subir, revisar y mapear; botón en el listado y en el sidebar; el detalle de compra muestra datos fiscales y permite abrir el PDF adjunto.
+   - Tests en `tests/importacionFacturas.test.ts`: interpretación de importes, parser por coordenadas, matching, confirmación con impacto de stock, creación inline, rollback y duplicados.
+2. **Proveedores con datos fiscales**
+   - `Proveedor.cuit` se normaliza a `30-71234567-8` y es único; `Proveedor.condicionIva` reutiliza el enum existente. El formulario y la tabla del frontend los muestran y editan.
+
+## Iteración anterior (25/11/2026)
 1. **Credenciales iniciales seguras**
    - El instalador pide la contraseña de `admin`; si se deja vacía, genera una aleatoria de 16 caracteres.
    - La contraseña viaja al seed por la variable de entorno `ADMIN_PASSWORD` (no por línea de comandos).
@@ -66,6 +81,8 @@ Sistema full-stack de gestión de stock y ventas para tiendas minoristas. Incluy
 - **Contraseña inicial**: `debeCambiarPassword` se guarda en la BD y viaja en el JWT; no alcanza con ocultar la pantalla en el frontend.
 - **Arranque**: el launcher no recompila por defecto; `preparar-arranque.js` evita `prisma generate`/`migrate deploy` cuando no hace falta. Si se agrega una migración o cambia el schema, se aplica sola en el siguiente arranque.
 - **Servicio de Windows**: `SistemaStock` (NSSM) es opcional. `Iniciar Sistema.bat` lo detecta y solo abre el navegador; para actualizar código usar `scripts\actualizar.ps1`.
+- **Importación de facturas**: el borrador vive en `ImportacionFactura` y no toca stock; recién al confirmar se crea la `Compra`. No incluir `archivoContenido` en consultas normales (usar `SELECTOR_IMPORTACION`).
+- **Parser de facturas**: asume PDF electrónico con texto seleccionable. Escaneos o fotos no funcionan sin OCR/IA. Las cantidades decimales requieren ajuste manual porque `CompraItem.cantidad` es entero.
 - **Scripts PowerShell**: pensados para Windows PowerShell 5.1; autodetectan `C:\Program Files\PostgreSQL\*\bin` y no exponen contraseñas en la línea de comandos.
 
 ## Comandos útiles

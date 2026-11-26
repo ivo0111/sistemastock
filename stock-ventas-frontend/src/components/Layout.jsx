@@ -66,6 +66,9 @@ export default function Layout() {
               <NavLink to="/compras/nueva" className="sidebar-link">
                 Nueva Compra
               </NavLink>
+              <NavLink to="/compras/importar" className="sidebar-link">
+                Importar Factura
+              </NavLink>
             </>
           )}
 

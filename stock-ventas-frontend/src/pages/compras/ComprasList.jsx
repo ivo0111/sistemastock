@@ -31,7 +31,12 @@ export default function ComprasList() {
     <div className="card">
       <div className="card-header">
         <span className="card-title">Compras ({total})</span>
-        <button className="btn btn-primary" onClick={() => navigate('/compras/nueva')}>+ Nueva Compra</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline" onClick={() => navigate('/compras/importar')}>
+            Importar factura
+          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/compras/nueva')}>+ Nueva Compra</button>
+        </div>
       </div>
 
       {loading ? <div className="loading">Cargando...</div> : (
@@ -55,7 +60,10 @@ export default function ComprasList() {
                     <td>{new Date(c.fecha).toLocaleString('es-AR')}</td>
                     <td>{c.proveedor?.nombre || `#${c.proveedorId}`}</td>
                     <td style={{ fontWeight: 600 }}>${Number(c.total).toFixed(2)}</td>
-                    <td><span className="badge badge-success">{c.estado}</span></td>
+                    <td>
+                      <span className="badge badge-success">{c.estado}</span>{' '}
+                      {c.origen === 'IMPORTADA' && <span className="badge badge-info">Importada</span>}
+                    </td>
                     <td>{c.items?.length ?? '-'}</td>
                   </tr>
                 ))}

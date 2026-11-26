@@ -15,6 +15,7 @@ import Proveedores from './pages/proveedores/Proveedores'
 import ComprasList from './pages/compras/ComprasList'
 import CompraForm from './pages/compras/CompraForm'
 import CompraDetalle from './pages/compras/CompraDetalle'
+import ImportarFactura from './pages/compras/ImportarFactura'
 import Clientes from './pages/clientes/Clientes'
 import Promociones from './pages/promociones/Promociones'
 import Caja from './pages/caja/Caja'
@@ -96,6 +97,14 @@ export default function App() {
           element={
             <ProtectedRoute adminOnly>
               <ComprasList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="compras/importar"
+          element={
+            <ProtectedRoute adminOnly>
+              <ImportarFactura />
             </ProtectedRoute>
           }
         />

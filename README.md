@@ -173,6 +173,10 @@ proyectos y tests del backend contra un PostgreSQL efímero.
   turno, cierre con diferencia contado vs. esperado.
 - **Compras**: registran proveedor y usuario, suman stock y actualizan
   precio costo opcionalmente; rechazan productos inactivos.
+- **Importación de facturas de compra**: subida de PDF electrónico ARCA,
+  extracción local de proveedor/comprobante/ítems, sugerencia de productos y
+  confirmación en una transacción. Nada impacta stock hasta confirmar y el PDF
+  queda adjunto en la base. IA opcional por `FACTURA_IA_*` (ver `.env.example`).
 - **Promociones**: porcentual, segunda unidad y dos por uno; globales o por
   producto; el backend garantiza la mejor bonificación vigente.
 - **Reportes**: ventas por día/semana/mes, productos más vendidos, margen,

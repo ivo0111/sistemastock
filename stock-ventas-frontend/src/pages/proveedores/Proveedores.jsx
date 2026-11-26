@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react'
 import { get, post, put, del } from '../../api/client'
 
-const INITIAL = { nombre: '', contacto: '', telefono: '', email: '' }
+const INITIAL = { nombre: '', cuit: '', condicionIva: '', contacto: '', telefono: '', email: '' }
+
+const CONDICIONES_IVA = [
+  { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
+  { value: 'MONOTRIBUTO', label: 'Monotributo' },
+  { value: 'CONSUMIDOR_FINAL', label: 'Consumidor Final' },
+  { value: 'EXENTO', label: 'Exento' },
+]
 
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState([])
@@ -31,7 +38,14 @@ export default function Proveedores() {
   }
 
   function openEdit(p) {
-    setForm({ nombre: p.nombre, contacto: p.contacto || '', telefono: p.telefono || '', email: p.email || '' })
+    setForm({
+      nombre: p.nombre,
+      cuit: p.cuit || '',
+      condicionIva: p.condicionIva || '',
+      contacto: p.contacto || '',
+      telefono: p.telefono || '',
+      email: p.email || '',
+    })
     setEditId(p.id)
     setShowForm(true)
   }
@@ -79,6 +93,34 @@ export default function Proveedores() {
                 <label>Nombre</label>
                 <input className="form-control" name="nombre" value={form.nombre} onChange={handleChange} required />
               </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>CUIT</label>
+                  <input
+                    className="form-control"
+                    name="cuit"
+                    value={form.cuit}
+                    onChange={handleChange}
+                    placeholder="30-71234567-8"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Condición IVA</label>
+                  <select
+                    className="form-control"
+                    name="condicionIva"
+                    value={form.condicionIva}
+                    onChange={handleChange}
+                  >
+                    <option value="">Sin especificar</option>
+                    {CONDICIONES_IVA.map((condicion) => (
+                      <option key={condicion.value} value={condicion.value}>
+                        {condicion.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="form-group">
                 <label>Contacto</label>
                 <input className="form-control" name="contacto" value={form.contacto} onChange={handleChange} />
@@ -108,6 +150,8 @@ export default function Proveedores() {
             <thead>
               <tr>
                 <th>Nombre</th>
+                <th>CUIT</th>
+                <th>Condición IVA</th>
                 <th>Contacto</th>
                 <th>Teléfono</th>
                 <th>Email</th>
@@ -118,6 +162,8 @@ export default function Proveedores() {
               {proveedores.map(p => (
                 <tr key={p.id}>
                   <td>{p.nombre}</td>
+                  <td>{p.cuit || '-'}</td>
+                  <td>{CONDICIONES_IVA.find(c => c.value === p.condicionIva)?.label || '-'}</td>
                   <td>{p.contacto || '-'}</td>
                   <td>{p.telefono || '-'}</td>
                   <td>{p.email || '-'}</td>
@@ -128,7 +174,7 @@ export default function Proveedores() {
                 </tr>
               ))}
               {proveedores.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 20, color: 'var(--gray-400)' }}>Sin proveedores</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 20, color: 'var(--gray-400)' }}>Sin proveedores</td></tr>
               )}
             </tbody>
           </table>

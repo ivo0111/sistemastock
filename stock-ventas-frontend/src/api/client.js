@@ -68,6 +68,40 @@ export function post(endpoint, data) {
   return request(endpoint, { method: 'POST', body: JSON.stringify(data) })
 }
 
+// Multipart: no se fija Content-Type para que el navegador agregue el boundary
+// que corresponde a FormData.
+export async function postForm(endpoint, formData) {
+  const token = getToken()
+  const headers = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  if (res.status === 401) {
+    clearSession()
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+    throw new Error('Sesión expirada')
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const msg = body?.error?.message || `Error ${res.status}`
+    const err = new Error(msg)
+    err.code = body?.error?.code
+    err.status = res.status
+    throw err
+  }
+
+  if (res.status === 204) return null
+  return res.json()
+}
+
 export function put(endpoint, data) {
   return request(endpoint, { method: 'PUT', body: JSON.stringify(data) })
 }

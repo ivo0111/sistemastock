@@ -26,6 +26,11 @@ router.get(
 
 const proveedorSchema = z.object({
   nombre: z.string().min(1),
+  cuit: z.string().max(20).optional().or(z.literal('')),
+  condicionIva: z
+    .enum(["RESPONSABLE_INSCRIPTO", "MONOTRIBUTO", "CONSUMIDOR_FINAL", "EXENTO"])
+    .nullable()
+    .optional(),
   contacto: z.string().optional(),
   telefono: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
