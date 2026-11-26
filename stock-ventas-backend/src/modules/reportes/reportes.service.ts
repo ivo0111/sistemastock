@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma";
-import { Prisma, EstadoVenta } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../utils/AppError";
 
 type Agrupacion = "dia" | "semana" | "mes";
